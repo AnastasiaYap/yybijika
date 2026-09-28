@@ -104,6 +104,32 @@ single-reading, or which matched a whole phrase, is trusted; anything else is
 queued for a second opinion. Listening and typing drills only use trusted
 readings, so a wrong tone can never mark a right answer wrong.
 
+## Updates
+
+The app asks GitHub for the latest release on launch and offers it on the home
+screen — never a dialog, because an update is not urgent enough to interrupt a
+study session. Tapping through downloads the APK to cache and hands it to the
+system installer, which refuses anything not signed with the same key as the
+installed app.
+
+Installing an update keeps all progress. The new deck rides inside the APK and
+replaces `content.db` wholesale, while `progress.db` — every interval, streak
+and point — is a separate file the install never touches.
+
+To cut a new version:
+
+```bash
+./release.sh 0.2.0 "Added examples for 300 more words"
+```
+
+That bumps `versionName` and `versionCode`, rebuilds the deck from the notes,
+runs the tests, builds and signs, tags, pushes, and publishes the APK as a GitHub
+release. Phones offer it on their next launch.
+
+`versionCode` has to increase for Android to treat an install as an upgrade;
+`release.sh` increments it automatically, and refuses a version that does not go
+up.
+
 ## Signing
 
 `keystore.properties` and `yybijika-release.jks` are gitignored and **must be
