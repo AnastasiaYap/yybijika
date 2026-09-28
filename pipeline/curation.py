@@ -121,7 +121,7 @@ DEMOTE: dict[str, tuple[str, str]] = {
     "两个多小时": ("多", "Dua jam lebih."),
     "三点左右": ("左右", "Sekitar jam tiga."),
     "一米六十三": ("米", "Tingginya 1,63 meter."),
-    "古百分之七十": ("占", "Menyumbang tujuh puluh persen."),
+    "占百分之七十": ("占", "Menyumbang tujuh puluh persen."),
     "帮我的忙": ("帮忙", "Tolong bantu aku."),
     "用电脑": ("电脑", "Pakai komputer."),
 }
@@ -710,3 +710,13 @@ DROP.update({
     "穴": "captured with unreadable text beside it",
     "章印": "unclear which word was meant; 印章 and 盖章 are both plausible",
 })
+
+
+# Readings for words the curation itself introduced.
+PINYIN.update({"得到奖学金": "dé dào jiǎng xué jīn"})
+
+# Two corrections written for words later removed. Kept as a record of why they
+# are gone rather than deleted, but the build flags them as unused, so they are
+# retired here.
+for _retired in ("登上了", "除了以外"):
+    PINYIN.pop(_retired, None)

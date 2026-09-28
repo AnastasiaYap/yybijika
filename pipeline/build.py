@@ -180,17 +180,26 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
                 "INSERT OR IGNORE INTO tag (word_id, tag) VALUES (?,?)", (wid, tag)
             )
 
+        # The same sentence can arrive twice with and without its full stop —
+        # once from a demotion, once from the written entry. Compare on the bare
+        # characters so the pair is recognised as one sentence.
+        seen_examples: set[str] = set()
         for sentence in entry.examples:
             simp = zh.to_simplified(sentence)
+            key = "".join(zh.RE_HAN.findall(simp))
+            if key in seen_examples:
+                continue
+            seen_examples.add(key)
             conn.execute(
                 """INSERT INTO example
-                   (word_id, zh, pinyin, source, contains_target, token_count)
-                   VALUES (?,?,?,?,?,?)""",
+                   (word_id, zh, pinyin, gloss, source, contains_target, token_count)
+                   VALUES (?,?,?,?,?,?,?)""",
                 (
                     wid,
                     simp,
-                    zh.read(simp).pinyin,
-                    "notes",
+                    zh.read_sentence(simp),
+                    curate.example_gloss_for(hanzi, simp),
+                    "written" if hanzi in curate.entry_table.ENTRIES else "notes",
                     int(hanzi in simp),
                     tokens_in(simp),
                 ),
