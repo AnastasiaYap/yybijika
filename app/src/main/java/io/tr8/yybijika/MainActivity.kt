@@ -176,7 +176,12 @@ private fun App(vm: AppViewModel = viewModel()) {
                     )
 
                     Overlay.DETAIL -> detail?.let { (word, mastery) ->
-                        WordDetailScreen(word, mastery, vm::speak)
+                        WordDetailScreen(
+                            word = word,
+                            mastery = mastery,
+                            onSpeak = vm::speak,
+                            onOpenRelated = vm::openWordByHanzi,
+                        )
                     }
 
                     Overlay.SETTINGS -> SettingsScreen(

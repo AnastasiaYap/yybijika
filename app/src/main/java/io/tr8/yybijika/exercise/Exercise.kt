@@ -19,13 +19,37 @@ data class WordBundle(
     val usageNotes: List<String> = emptyList(),
     val examples: List<ExampleSentence> = emptyList(),
     val tags: List<String> = emptyList(),
+    val relations: List<Relation> = emptyList(),
 ) {
     val primaryGloss: String? get() = glosses.firstOrNull()
+
+    /**
+     * Words this one is genuinely lost against — not every link, only the kinds
+     * where picking the wrong one produces a real mistake.
+     */
+    val confusables: List<Relation>
+        get() = relations.filter {
+            it.kind in setOf("near-homophone", "homophone", "synonym", "reversed")
+        }
 
     /** Examples usable for a cloze: the word has to actually appear in them. */
     val clozeExamples: List<ExampleSentence>
         get() = examples.filter { it.containsTarget }
 }
+
+/**
+ * A link to another word in the deck.
+ *
+ * [note] is what separates the two — the part that makes the link teach
+ * something rather than merely observe that two words look alike.
+ */
+data class Relation(
+    val kind: String,
+    val hanzi: String,
+    val pinyin: String?,
+    val gloss: String?,
+    val note: String?,
+)
 
 data class ExampleSentence(
     val zh: String,
@@ -49,6 +73,9 @@ enum class Requirement {
     CLOZE_EXAMPLE,
     BUILDABLE_SENTENCE,
     DISTRACTORS_3,
+
+    /** At least one word this is genuinely confusable with. */
+    CONFUSABLE,
 
     /**
      * A Chinese voice is installed on this device.

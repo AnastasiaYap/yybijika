@@ -406,6 +406,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _detail.value = word to repo.masteryFor(id)
     }
 
+    /** Follow a link from one word's detail page to another's. */
+    fun openWordByHanzi(hanzi: String) = viewModelScope.launch {
+        val match = repo.search(hanzi).firstOrNull { it.hanzi == hanzi } ?: return@launch
+        _detail.value = match to repo.masteryFor(match.id)
+    }
+
     fun closeWord() {
         _detail.value = null
     }

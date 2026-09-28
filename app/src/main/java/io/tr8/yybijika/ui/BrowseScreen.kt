@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,6 +35,20 @@ import io.tr8.yybijika.learn.Skill
 import io.tr8.yybijika.ui.theme.HanziInline
 import io.tr8.yybijika.ui.theme.HanziMedium
 import io.tr8.yybijika.ui.theme.PinyinStyle
+
+/** Says what the link is, in words rather than a database kind. */
+private fun relationLabel(kind: String, note: String?): String = when (kind) {
+    "synonym" -> "Close in meaning — check the difference"
+    "antonym" -> "Opposite"
+    "near-homophone" -> "Same syllables, different tone — easy to mix up"
+    "homophone" -> "Sounds identical"
+    "reversed" -> "The same characters the other way round"
+    "measure" -> "Measure word"
+    "shares" -> "Shares the character ${note.orEmpty()}"
+    "variant" -> "Also written as"
+    "see-also" -> "See also"
+    else -> kind
+}
 
 @Composable
 fun BrowseScreen(
@@ -84,10 +100,16 @@ fun BrowseScreen(
 }
 
 @Composable
-fun WordDetailScreen(word: WordBundle, mastery: Map<Skill, Mastery>, onSpeak: (String) -> Unit) {
+fun WordDetailScreen(
+    word: WordBundle,
+    mastery: Map<Skill, Mastery>,
+    onSpeak: (String) -> Unit,
+    onOpenRelated: (String) -> Unit = {},
+) {
     Column(
         Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -151,6 +173,55 @@ fun WordDetailScreen(word: WordBundle, mastery: Map<Skill, Mastery>, onSpeak: (S
                             ex.glossEn?.let {
                                 Text(it, style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Links come before mastery: the network is the part that turns a list
+        // of separate words into something you can reason about.
+        if (word.relations.isNotEmpty()) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Related words", fontWeight = FontWeight.SemiBold)
+                    word.relations.groupBy { it.kind }.forEach { (kind, group) ->
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                relationLabel(kind, group.firstOrNull()?.note),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            group.forEach { rel ->
+                                Column(
+                                    Modifier.clickable { onOpenRelated(rel.hanzi) },
+                                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(rel.hanzi, style = HanziInline)
+                                        rel.pinyin?.let {
+                                            Text("  $it",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                    rel.gloss?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    // A synonym link is only useful with the
+                                    // distinction attached; without it the card
+                                    // says "these are similar", which is the part
+                                    // that was never in doubt.
+                                    if (kind == "synonym" || kind == "antonym") {
+                                        rel.note?.takeIf { it.isNotBlank() }?.let {
+                                            Text(it,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

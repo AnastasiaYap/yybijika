@@ -43,7 +43,11 @@ CREATE TABLE relation (
     -- Kept as text too: the author cross-references words she never wrote an
     -- entry for, and dropping those would lose real information.
     related_hanzi TEXT NOT NULL,
-    kind       TEXT NOT NULL,          -- variant | synonym | antonym | see-also
+    -- variant | synonym | antonym | see-also | homophone | near-homophone
+    -- | reversed | shares | measure
+    kind       TEXT NOT NULL,
+    note       TEXT,                   -- what separates the two, or what the
+                                       -- shared character contributes
     PRIMARY KEY (word_id, related_hanzi, kind)
 );
 

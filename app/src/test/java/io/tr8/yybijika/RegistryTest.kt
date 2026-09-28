@@ -3,6 +3,7 @@ package io.tr8.yybijika
 import io.tr8.yybijika.exercise.DeckContext
 import io.tr8.yybijika.exercise.ExampleSentence
 import io.tr8.yybijika.exercise.Registry
+import io.tr8.yybijika.exercise.Relation
 import io.tr8.yybijika.exercise.WordBundle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -30,6 +31,7 @@ private fun word(
     glosses: List<String> = listOf("ramai"),
     examples: List<ExampleSentence> = emptyList(),
     isPhrase: Boolean = false,
+    relations: List<Relation> = emptyList(),
 ) = WordBundle(
     id = 1,
     hanzi = hanzi,
@@ -39,6 +41,16 @@ private fun word(
     isPhrase = isPhrase,
     glosses = glosses,
     examples = examples,
+    relations = relations,
+)
+
+/** A word this one is genuinely lost against, for the tell-apart exercise. */
+private fun confusable(hanzi: String = "热脑") = Relation(
+    kind = "near-homophone",
+    hanzi = hanzi,
+    pinyin = "rè nǎo",
+    gloss = "bukan kata sungguhan",
+    note = "rè nao vs rè nǎo",
 )
 
 private fun example(zh: String = "这里很热闹。", target: String = "热闹") =
@@ -67,6 +79,7 @@ class RegistryTest {
             word(glosses = emptyList()),
             word(verified = false),
             word(examples = listOf(example())),
+            word(examples = listOf(example()), relations = listOf(confusable())),
             word(glosses = emptyList(), verified = false),
             word(isPhrase = true, hanzi = "农林牧渔水利生产人员"),
             word(examples = listOf(example(zh = "热闹", target = "热闹"))),
@@ -93,7 +106,7 @@ class RegistryTest {
 
     @Test
     fun `a fully populated word can be drilled every way`() {
-        val full = word(examples = listOf(example()))
+        val full = word(examples = listOf(example()), relations = listOf(confusable()))
         val available = Registry.available(full, FakeContext()).map { it.id }
         assertTrue("expected every type, got $available",
             available.containsAll(Registry.all.map { it.id }))
@@ -108,7 +121,7 @@ class RegistryTest {
     @Test
     fun `listening is withheld when the device has no chinese voice`() {
         val ctx = FakeContext(ttsAvailable = false)
-        val full = word(examples = listOf(example()))
+        val full = word(examples = listOf(example()), relations = listOf(confusable()))
         assertNull(io.tr8.yybijika.exercise.ListenChoose.generate(full, ctx))
         assertTrue(Registry.available(full, ctx).none { it.id == "listen_choose" })
     }
@@ -126,7 +139,7 @@ class RegistryTest {
     @Test
     fun `multiple choice always contains its answer exactly once`() {
         val ctx = FakeContext()
-        val full = word(examples = listOf(example()))
+        val full = word(examples = listOf(example()), relations = listOf(confusable()))
         for (type in Registry.all) {
             when (val ex = type.generate(full, ctx)) {
                 is io.tr8.yybijika.exercise.Exercise.MultipleChoice -> {
@@ -161,6 +174,27 @@ class RegistryTest {
         val ex = io.tr8.yybijika.exercise.BuildSentence.generate(full, FakeContext())
             as io.tr8.yybijika.exercise.Exercise.TileBuilder
         assertEquals(ex.solution.sorted(), ex.tiles.sorted())
+    }
+
+    /**
+     * The tell-apart exercise exists to pit a word against the specific word it
+     * is confused with, so a random distractor would defeat the point entirely.
+     */
+    @Test
+    fun `tell apart uses the confusable word as the distractor`() {
+        val full = word(examples = listOf(example()), relations = listOf(confusable()))
+        val ex = io.tr8.yybijika.exercise.TellApart.generate(full, FakeContext())
+            as io.tr8.yybijika.exercise.Exercise.Cloze
+        assertEquals(2, ex.choices.size)
+        assertTrue("the rival must be one of the two choices",
+            ex.choices.contains("热脑"))
+        assertEquals("热闹", ex.choices[ex.answerIndex])
+    }
+
+    @Test
+    fun `tell apart is withheld when nothing is confusable with the word`() {
+        val lonely = word(examples = listOf(example()))
+        assertNull(io.tr8.yybijika.exercise.TellApart.generate(lonely, FakeContext()))
     }
 
     @Test

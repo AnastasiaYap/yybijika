@@ -34,8 +34,8 @@ android {
         applicationId = "io.tr8.yybijika"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Where the in-app updater looks for new releases.

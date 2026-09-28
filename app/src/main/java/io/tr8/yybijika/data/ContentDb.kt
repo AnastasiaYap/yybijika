@@ -3,6 +3,7 @@ package io.tr8.yybijika.data
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import io.tr8.yybijika.exercise.ExampleSentence
+import io.tr8.yybijika.exercise.Relation
 import io.tr8.yybijika.exercise.WordBundle
 import java.io.File
 
@@ -133,6 +134,38 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
             }
         }
 
+        // Links are loaded with a join so each one arrives with the other word's
+        // reading and meaning: a link you have to look up separately is a link
+        // nobody follows.
+        val links = mutableMapOf<Long, MutableList<Relation>>()
+        db.rawQuery(
+            """SELECT r.word_id, r.kind, r.related_hanzi, r.note,
+                      w2.pinyin,
+                      (SELECT s.gloss FROM sense s WHERE s.word_id = w2.id
+                        AND s.lang = 'id' ORDER BY s.ordinal LIMIT 1) AS gloss
+               FROM relation r LEFT JOIN word w2 ON w2.hanzi = r.related_hanzi
+               WHERE r.word_id IN ($placeholders)
+               ORDER BY r.word_id,
+                 CASE r.kind
+                   WHEN 'synonym' THEN 1 WHEN 'antonym' THEN 2
+                   WHEN 'near-homophone' THEN 3 WHEN 'homophone' THEN 4
+                   WHEN 'reversed' THEN 5 WHEN 'measure' THEN 6
+                   WHEN 'variant' THEN 7 WHEN 'see-also' THEN 8 ELSE 9 END""",
+            args,
+        ).use { c ->
+            while (c.moveToNext()) {
+                links.getOrPut(c.getLong(0)) { mutableListOf() }.add(
+                    Relation(
+                        kind = c.getString(1),
+                        hanzi = c.getString(2),
+                        note = c.getString(3),
+                        pinyin = c.getString(4),
+                        gloss = c.getString(5),
+                    )
+                )
+            }
+        }
+
         return db.rawQuery(
             "SELECT id, hanzi, hanzi_trad, pinyin, pinyin_verified, is_phrase " +
                 "FROM word WHERE id IN ($placeholders)", args
@@ -152,6 +185,7 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                             usageNotes = notes[id].orEmpty(),
                             examples = examples[id].orEmpty(),
                             tags = tags[id].orEmpty(),
+                            relations = links[id].orEmpty(),
                         )
                     )
                 }

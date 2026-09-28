@@ -3,6 +3,7 @@ package io.tr8.yybijika.exercise
 import io.tr8.yybijika.exercise.Requirement.AUDIO
 import io.tr8.yybijika.exercise.Requirement.BUILDABLE_SENTENCE
 import io.tr8.yybijika.exercise.Requirement.CLOZE_EXAMPLE
+import io.tr8.yybijika.exercise.Requirement.CONFUSABLE
 import io.tr8.yybijika.exercise.Requirement.DISTRACTORS_3
 import io.tr8.yybijika.exercise.Requirement.GLOSS
 import io.tr8.yybijika.exercise.Requirement.VERIFIED_PINYIN
@@ -27,6 +28,7 @@ object Registry {
         ClozeExample,
         BuildSentence,
         TypeHanzi,
+        TellApart,
     )
 
     private val byId = all.associateBy { it.id }
@@ -43,6 +45,7 @@ object Registry {
         if (word.clozeExamples.any { it.tokenCount >= 4 }) add(BUILDABLE_SENTENCE)
         if (ctx.distractorGlosses(word, 3).size >= 3) add(DISTRACTORS_3)
         if (ctx.ttsAvailable) add(AUDIO)
+        if (word.confusables.isNotEmpty() && word.clozeExamples.isNotEmpty()) add(CONFUSABLE)
     }
 
     /** Exercise types this word can actually produce right now. */
@@ -206,6 +209,49 @@ object ListenChoose : ExerciseType {
             answerIndex = choices.indexOf(word.hanzi),
             speakPrompt = true,
             explanation = "${word.hanzi} · ${word.pinyin} · ${word.primaryGloss}",
+        )
+    }
+}
+
+/**
+ * Two words that are genuinely easy to mix up, and one sentence that only one of
+ * them fits.
+ *
+ * This is the exercise the deck was missing. Every other type drills a word on
+ * its own, which is exactly the condition under which 认为 and 以为 both feel
+ * right. Confusion lives between words, so it has to be tested between them: the
+ * distractor is not a random other word but the specific one this word is lost
+ * against — its near-homophone, its near-synonym, or itself reversed.
+ */
+object TellApart : ExerciseType {
+    override val id = "tell_apart"
+    override val skill = Skill.USAGE
+    override val label = "Which one fits?"
+    override val requires = setOf(GLOSS, CONFUSABLE)
+
+    override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
+        val sentence = word.clozeExamples.firstOrNull() ?: return null
+        val at = sentence.zh.indexOf(word.hanzi)
+        if (at < 0) return null
+        val rival = word.confusables.firstOrNull() ?: return null
+
+        val choices = listOf(word.hanzi, rival.hanzi)
+            .shuffled(Random(ctx.shuffleSeed(word, id)))
+        return Exercise.Cloze(
+            typeId = id,
+            skill = skill,
+            word = word,
+            sentenceBefore = sentence.zh.substring(0, at),
+            sentenceAfter = sentence.zh.substring(at + word.hanzi.length),
+            answer = word.hanzi,
+            choices = choices,
+            answerIndex = choices.indexOf(word.hanzi),
+            gloss = sentence.gloss,
+            // The note is the whole point: getting it right by luck teaches
+            // nothing, so the reason is shown either way.
+            explanation = rival.note
+                ?: "${word.hanzi} ${word.pinyin} — ${word.primaryGloss}  ·  " +
+                   "${rival.hanzi} ${rival.pinyin.orEmpty()} — ${rival.gloss.orEmpty()}",
         )
     }
 }

@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import curate  # noqa: E402
 import essays  # noqa: E402
 import lex  # noqa: E402
+import relations  # noqa: E402
 import notes  # noqa: E402
 import tags  # noqa: E402
 import zh  # noqa: E402
@@ -170,7 +171,8 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
             other_simp = zh.to_simplified(other)
             conn.execute(
                 """INSERT OR IGNORE INTO relation
-                   (word_id, related_id, related_hanzi, kind) VALUES (?,?,?,?)""",
+                   (word_id, related_id, related_hanzi, kind, note)
+                   VALUES (?,?,?,?,NULL)""",
                 (wid, word_ids.get(other_simp), other_simp, kind),
             )
 
@@ -223,6 +225,40 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
                 "INSERT INTO pattern_example (pattern_id, zh, pinyin) VALUES (?,?,?)",
                 (pid, simp, zh.read(simp).pinyin),
             )
+
+    # The relation network. Everything the data supports is computed; the links
+    # that need a human are written out in relations.py.
+    pinyin_of = {
+        h: conn.execute("SELECT pinyin FROM word WHERE id = ?", (i,)).fetchone()[0]
+        for h, i in word_ids.items()
+    }
+
+    def link(word: str, other: str, kind: str, note: str | None) -> None:
+        if word not in word_ids or other not in word_ids:
+            return
+        conn.execute(
+            """INSERT OR IGNORE INTO relation
+               (word_id, related_id, related_hanzi, kind, note) VALUES (?,?,?,?,?)""",
+            (word_ids[word], word_ids[other], other, kind, note or None),
+        )
+
+    for word, other, kind, note in relations.computed(pinyin_of):
+        link(word, other, kind, note)
+
+    for word, other, kind, ch in relations.shared_characters(list(word_ids)):
+        link(word, other, kind, ch)
+
+    for word, other, note in relations.SYNONYMS:
+        link(word, other, "synonym", note)
+        link(other, word, "synonym", note)
+
+    for word, other, note in relations.ANTONYMS:
+        link(word, other, "antonym", note)
+        link(other, word, "antonym", note)
+
+    for noun, measure in relations.MEASURE_WORDS:
+        link(noun, measure, "measure", f"一{measure}{noun}")
+        link(measure, noun, "measure", f"一{measure}{noun}")
 
     # Reading passages, written around words that are already in the deck.
     for essay in essays.ESSAYS:

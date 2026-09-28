@@ -94,6 +94,7 @@ class Repo(
             }
         ),
         tags = listOf("added"),
+        relations = emptyList(),
     )
 
     suspend fun userWords(): List<WordBundle> = withContext(Dispatchers.IO) {
