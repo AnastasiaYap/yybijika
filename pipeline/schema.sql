@@ -62,7 +62,12 @@ CREATE TABLE example (
     -- An example is only usable for a cloze if the target word appears in it
     -- verbatim; computed once at build time rather than re-checked per session.
     contains_target INTEGER NOT NULL DEFAULT 0,
-    token_count     INTEGER NOT NULL DEFAULT 0
+    token_count     INTEGER NOT NULL DEFAULT 0,
+    -- Word-level tiles, space separated, cut at build time by pipeline/segment.py.
+    -- Stored rather than computed on the phone because the segmenter needs a
+    -- dictionary the APK has no reason to carry.
+    segments        TEXT,
+    segment_count   INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE pattern (
@@ -148,6 +153,11 @@ SELECT
        WHERE e.word_id = w.id AND e.contains_target = 1)           AS cloze_count,
     (SELECT COUNT(*) FROM example e
        WHERE e.word_id = w.id AND e.contains_target = 1
-         AND e.token_count >= 4)                                   AS builder_count,
+         AND e.segment_count >= 4)                                 AS builder_count,
+    -- A sentence is worth translating only if it says something: the tile count
+    -- is the same threshold, but it also has to carry a gloss to translate from.
+    (SELECT COUNT(*) FROM example e
+       WHERE e.word_id = w.id AND e.segment_count >= 4
+         AND e.gloss IS NOT NULL AND e.gloss <> '')                AS translatable_count,
     (SELECT COUNT(*) FROM tag t WHERE t.word_id = w.id)            AS tag_count
 FROM word w;

@@ -34,6 +34,13 @@ object SessionBuilder {
      */
     const val MAX_NEW_PER_SESSION = 10
 
+    /**
+     * Build a session.
+     *
+     * [onlyType] restricts every question to one exercise type, which is what a
+     * quiz of a single kind needs. Left null, the type is chosen per card from
+     * whichever skill came due — the mixed behaviour.
+     */
     fun build(
         size: Int,
         due: List<Due>,
@@ -41,7 +48,9 @@ object SessionBuilder {
         bundles: Map<Long, WordBundle>,
         ctx: DeckContext,
         random: Random = Random.Default,
+        onlyType: String? = null,
     ): List<SessionItem> {
+        if (onlyType != null) return single(size, due, unseen, bundles, ctx, onlyType, random)
         val items = mutableListOf<SessionItem>()
 
         for (card in due.sortedWith(compareBy({ it.dueAt }, { it.box }))) {
@@ -63,6 +72,40 @@ object SessionBuilder {
             introduced++
         }
 
+        return items
+    }
+
+    /**
+     * A quiz of exactly one question type.
+     *
+     * Due words first so the quiz still serves the schedule, then anything else
+     * that can produce this question — a single-type quiz should not run dry
+     * just because nothing of that kind happens to be due today.
+     */
+    private fun single(
+        size: Int,
+        due: List<Due>,
+        unseen: List<Long>,
+        bundles: Map<Long, WordBundle>,
+        ctx: DeckContext,
+        typeId: String,
+        random: Random,
+    ): List<SessionItem> {
+        val type = Registry.byId(typeId) ?: return emptyList()
+        val items = mutableListOf<SessionItem>()
+        val used = mutableSetOf<Long>()
+
+        fun offer(wordId: Long, box: Int, isNew: Boolean) {
+            if (items.size >= size || wordId in used) return
+            val word = bundles[wordId] ?: return
+            val exercise = type.generate(word, ctx) ?: return
+            used += wordId
+            items += SessionItem(exercise, type.skill, box, isNew)
+        }
+
+        due.sortedBy { it.dueAt }.forEach { offer(it.wordId, it.box, false) }
+        unseen.forEach { offer(it, 0, true) }
+        bundles.keys.shuffled(random).forEach { offer(it, 0, false) }
         return items
     }
 

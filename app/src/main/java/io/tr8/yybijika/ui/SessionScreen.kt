@@ -110,7 +110,8 @@ fun SessionScreen(
                 is Exercise.MultipleChoice -> ChoiceBody(ex, state, onChoose, onSpeak)
                 is Exercise.Cloze -> ClozeBody(ex, state, onChoose)
                 is Exercise.Typing -> TypingBody(ex, state, onType)
-                is Exercise.TileBuilder -> BuilderBody(ex, state, onTapTile, onUndoTile)
+                is Exercise.TileBuilder ->
+                    BuilderBody(ex, state, onTapTile, onUndoTile, onSpeak)
             }
         }
 
@@ -272,9 +273,19 @@ private fun BuilderBody(
     state: SessionState,
     onTap: (Int) -> Unit,
     onUndo: () -> Unit,
+    onSpeak: (String) -> Unit,
 ) {
+    // Dictation plays itself on arrival, like the listening choice questions.
+    LaunchedEffect(ex.speak) { ex.speak?.let(onSpeak) }
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(ex.prompt, style = MaterialTheme.typography.titleMedium)
+
+        // Replaying is the whole exercise, so the button is not a fallback for
+        // a missed autoplay — it is how the question is actually worked.
+        ex.speak?.let { sentence ->
+            OutlinedButton(onClick = { onSpeak(sentence) }) { Text("Play again") }
+        }
 
         Card(
             Modifier
@@ -305,13 +316,11 @@ private fun BuilderBody(
             TextButton(onClick = onUndo) { Text("Undo") }
         }
 
+        // The sentence only; its reading and translation are the explanation,
+        // which GradeBar already prints under every question.
         if (state.revealed) {
             Text(ex.solution.joinToString(""), style = HanziInline,
                 color = MaterialTheme.colorScheme.primary)
-            ex.explanation?.let {
-                Text(it, style = PinyinStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
     }
 }

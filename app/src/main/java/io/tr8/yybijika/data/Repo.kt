@@ -3,7 +3,11 @@ package io.tr8.yybijika.data
 import android.content.Context
 import io.tr8.yybijika.exercise.DeckContext
 import io.tr8.yybijika.exercise.ExampleSentence
+import io.tr8.yybijika.exercise.Registry
+import io.tr8.yybijika.exercise.Requirement
 import io.tr8.yybijika.exercise.WordBundle
+import io.tr8.yybijika.learn.CardDeck
+import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
 import io.tr8.yybijika.learn.SessionBuilder
@@ -31,7 +35,7 @@ class Repo(
 
     /** Distractor pools are reused across a session; rebuilding them per question
      *  would mean a random query per card for no gain in variety. */
-    private val distractorCache = mutableMapOf<Long, List<WordBundle>>()
+    private val distractorCache = java.util.concurrent.ConcurrentHashMap<Long, List<WordBundle>>()
 
     fun setTtsAvailable(available: Boolean) {
         ttsReady = available
@@ -41,6 +45,10 @@ class Repo(
 
     val deckContext: DeckContext = object : DeckContext {
         override val ttsAvailable: Boolean get() = ttsReady
+
+        // Read once and held: 44 rows that never change between releases, and
+        // every measure-word question asks for the same list.
+        override val measureWords: List<String> by lazy { content.measureWords() }
 
         override fun distractorGlosses(word: WordBundle, count: Int): List<String> =
             pool(word)
@@ -90,6 +98,11 @@ class Repo(
                     glossEn = null,
                     containsTarget = it.contains(hanzi),
                     tokenCount = it.count { c -> c.code in 0x4E00..0x9FFF },
+                    // No segmenter on the phone — the dictionary it needs is a
+                    // build-time thing. A word you added yourself falls back to
+                    // character tiles, which is worse but not broken.
+                    segments = it.filter { c -> c.code in 0x4E00..0x9FFF }
+                        .map(Char::toString),
                 )
             }
         ),
@@ -150,7 +163,28 @@ class Repo(
         count
     }
 
-    suspend fun buildSession(size: Int = 20): List<SessionItem> = withContext(Dispatchers.IO) {
+    /**
+     * How many words could currently produce each kind of question.
+     *
+     * The SQL knows what the deck holds; only the app knows whether this phone
+     * can speak Chinese. Without the second half the Quiz screen offered a
+     * thousand listening questions on a device with no voice installed, and
+     * every one of them generated nothing.
+     */
+    suspend fun quizAvailability(): Map<String, Int> = withContext(Dispatchers.IO) {
+        val counts = content.questionAvailability()
+        if (ttsReady) return@withContext counts
+        val silent = Registry.all
+            .filter { Requirement.AUDIO in it.requires }
+            .map { it.id }
+            .toSet()
+        counts.mapValues { (id, n) -> if (id in silent) 0 else n }
+    }
+
+    suspend fun buildSession(
+        size: Int = 20,
+        onlyType: String? = null,
+    ): List<SessionItem> = withContext(Dispatchers.IO) {
         distractorCache.clear()
 
         val dueRows = dao.due(today(), size * 2)
@@ -166,12 +200,21 @@ class Repo(
             .filter { it !in seen }
             .shuffled()
 
-        val needed = (due.map { it.wordId } + unseen.take(SessionBuilder.MAX_NEW_PER_SESSION * 3))
-            .distinct()
+        val needed = if (onlyType != null) {
+            // Only words this question type can actually use, and only a few
+            // times as many as the quiz is long. Loading the whole deck and
+            // discarding what did not fit cost about twelve seconds.
+            (due.map { it.wordId } +
+                content.candidatesFor(onlyType, size * 4) +
+                added.map { it.id }).distinct()
+        } else {
+            (due.map { it.wordId } + unseen.take(SessionBuilder.MAX_NEW_PER_SESSION * 3))
+                .distinct()
+        }
         val bundles = (content.bundles(needed.filter { it > 0 }) +
             needed.mapNotNull { addedById[it] }).associateBy { it.id }
 
-        SessionBuilder.build(size, due, unseen, bundles, deckContext, Random.Default)
+        SessionBuilder.build(size, due, unseen, bundles, deckContext, Random.Default, onlyType)
     }
 
     /**
@@ -239,6 +282,82 @@ class Repo(
 
     suspend fun grammarPatterns(): List<GrammarPattern> =
         withContext(Dispatchers.IO) { content.grammarPatterns() }
+
+    // ---- the swipe deck ---------------------------------------------------
+
+    /**
+     * The order of one slice of the deck, as ids and states only.
+     *
+     * Deliberately does not load the words. Loading all 1,173 bundles with their
+     * glosses, examples and five thousand relations took eleven seconds to first
+     * frame, and the screen only ever shows one card at a time. The ids are
+     * cheap; [cardWindow] fetches the handful actually about to be seen.
+     *
+     * A word never swiped has no state row and counts as due, which is what
+     * makes a fresh install open with the whole deck rather than nothing.
+     */
+    suspend fun cardOrder(filter: CardFilter): List<CardState> =
+        withContext(Dispatchers.IO) {
+            val states = dao.allCardStates().associateBy { it.wordId }
+            val today = today()
+
+            val ids = content.allWordIds() + dao.userWords().map { -it.id }
+            val paired = ids.map { states[it] ?: CardState(wordId = it) }
+
+            paired.filter { state ->
+                when (filter) {
+                    CardFilter.DUE -> state.state != CardState.STATE_RETIRED &&
+                        state.dueAt <= today
+                    CardFilter.ALL -> state.state != CardState.STATE_RETIRED
+                    CardFilter.STRUGGLING -> state.state == CardState.STATE_STRUGGLING
+                    CardFilter.LEARNING -> state.state == CardState.STATE_LEARNING
+                    CardFilter.KNOWN -> state.state == CardState.STATE_KNOWN
+                    CardFilter.RETIRED -> state.state == CardState.STATE_RETIRED
+                }
+            }.sortedWith(compareBy({ it.dueAt }, { it.box }, { it.wordId }))
+        }
+
+    /** The words for a small window of that order — what is on screen and next. */
+    suspend fun cardWindow(ids: List<Long>): Map<Long, WordBundle> =
+        withContext(Dispatchers.IO) {
+            val fromDeck = content.bundles(ids.filter { it > 0 })
+            val fromUser = dao.userWords()
+                .map { it.toBundle() }
+                .filter { it.id in ids }
+            (fromDeck + fromUser).associateBy { it.id }
+        }
+
+    suspend fun swipe(wordId: Long, swipe: CardDeck.Swipe): CardState =
+        withContext(Dispatchers.IO) {
+            val current = dao.cardState(wordId) ?: CardState(wordId = wordId)
+            val next = CardDeck.apply(current, swipe, today())
+            dao.putCardState(next)
+            next
+        }
+
+    /** Put a card back the way it was, for undo. */
+    suspend fun restoreCardState(state: CardState) = withContext(Dispatchers.IO) {
+        dao.putCardState(state)
+    }
+
+    suspend fun revive(wordId: Long): CardState = withContext(Dispatchers.IO) {
+        val current = dao.cardState(wordId) ?: CardState(wordId = wordId)
+        val next = CardDeck.revive(current, today())
+        dao.putCardState(next)
+        next
+    }
+
+    suspend fun cardCounts(): Map<String, Int> = withContext(Dispatchers.IO) {
+        val counts = dao.cardStateCounts().associate { it.state to it.n }.toMutableMap()
+        // Words never swiped have no row; they are learning by default, and
+        // leaving them out would make the tallies disagree with the deck size.
+        val total = content.allWordIds().size + dao.userWordCount()
+        val tracked = counts.values.sum()
+        counts[CardState.STATE_LEARNING] =
+            (counts[CardState.STATE_LEARNING] ?: 0) + (total - tracked)
+        counts["due"] = dao.cardsDue(today()) + (total - tracked)
+        counts
+    }
 
     suspend fun word(id: Long): WordBundle? = withContext(Dispatchers.IO) {
         if (id < 0) dao.userWords().firstOrNull { -it.id == id }?.toBundle()

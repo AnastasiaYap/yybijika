@@ -6,6 +6,10 @@ import io.tr8.yybijika.exercise.Requirement.CLOZE_EXAMPLE
 import io.tr8.yybijika.exercise.Requirement.CONFUSABLE
 import io.tr8.yybijika.exercise.Requirement.DISTRACTORS_3
 import io.tr8.yybijika.exercise.Requirement.GLOSS
+import io.tr8.yybijika.exercise.Requirement.MEASURE
+import io.tr8.yybijika.exercise.Requirement.SEMANTIC_LINK
+import io.tr8.yybijika.exercise.Requirement.SHARED_CHARACTER
+import io.tr8.yybijika.exercise.Requirement.TRANSLATABLE
 import io.tr8.yybijika.exercise.Requirement.VERIFIED_PINYIN
 import io.tr8.yybijika.learn.Skill
 import kotlin.random.Random
@@ -29,6 +33,13 @@ object Registry {
         BuildSentence,
         TypeHanzi,
         TellApart,
+        ToneIdentify,
+        Dictation,
+        MeasureWord,
+        SemanticChoice,
+        OddOneOut,
+        PinyinToHanzi,
+        TranslateSentence,
     )
 
     private val byId = all.associateBy { it.id }
@@ -42,10 +53,17 @@ object Registry {
         if (word.glosses.isNotEmpty()) add(GLOSS)
         if (word.pinyinVerified) add(VERIFIED_PINYIN)
         if (word.clozeExamples.isNotEmpty()) add(CLOZE_EXAMPLE)
-        if (word.clozeExamples.any { it.tokenCount >= 4 }) add(BUILDABLE_SENTENCE)
+        if (word.buildableExamples.isNotEmpty()) add(BUILDABLE_SENTENCE)
+        if (word.translatableExamples.isNotEmpty()) add(TRANSLATABLE)
         if (ctx.distractorGlosses(word, 3).size >= 3) add(DISTRACTORS_3)
         if (ctx.ttsAvailable) add(AUDIO)
         if (word.confusables.isNotEmpty() && word.clozeExamples.isNotEmpty()) add(CONFUSABLE)
+        if (word.measures.isNotEmpty()) add(MEASURE)
+        if (word.semanticLinks.isNotEmpty()) add(SEMANTIC_LINK)
+        // Three of a kind plus one outsider, so a family of two is not enough.
+        if (word.sharesCharacterWith.groupBy { it.note }.any { it.value.size >= 2 }) {
+            add(SHARED_CHARACTER)
+        }
     }
 
     /** Exercise types this word can actually produce right now. */
@@ -166,8 +184,11 @@ object BuildSentence : ExerciseType {
     override val requires = setOf(BUILDABLE_SENTENCE)
 
     override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
-        val sentence = word.clozeExamples.firstOrNull { it.tokenCount >= 4 } ?: return null
-        val solution = sentence.zh.map { it.toString() }.filter { it.isNotBlank() }
+        val sentence = word.buildableExamples.firstOrNull() ?: return null
+        // Word tiles, not characters. Cutting 他想提高自己的水平 into nine single
+        // characters asks nothing about Chinese; cutting it into 他 / 想 / 提高 /
+        // 自己 / 的 / 水平 asks where the words are, which is the skill.
+        val solution = sentence.segments
         if (solution.size < 4) return null
         return Exercise.TileBuilder(
             typeId = id,

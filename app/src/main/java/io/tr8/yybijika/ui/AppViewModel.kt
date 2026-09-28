@@ -9,12 +9,15 @@ import io.tr8.yybijika.data.DeckStats
 import io.tr8.yybijika.data.Mastery
 import io.tr8.yybijika.data.GrammarPattern
 import io.tr8.yybijika.data.Passage
+import io.tr8.yybijika.data.CardState
 import io.tr8.yybijika.data.Repo
 import io.tr8.yybijika.data.Settings
 import io.tr8.yybijika.data.UserWord
 import io.tr8.yybijika.notes.DeepSeek
 import io.tr8.yybijika.notes.NoteParser
 import io.tr8.yybijika.exercise.WordBundle
+import io.tr8.yybijika.learn.CardDeck
+import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
 import io.tr8.yybijika.learn.SessionItem
@@ -38,6 +41,28 @@ data class HomeState(
     val ttsAvailable: Boolean = false,
 )
 
+/**
+ * The swipe deck.
+ *
+ * [undo] holds the card's state from before the last swipe, which is the only
+ * thing needed to put it back: a mis-swipe must not cost an interval.
+ */
+data class CardsState(
+    val filter: CardFilter = CardFilter.DUE,
+    /** The whole slice as states; the words themselves arrive a window at a time. */
+    val order: List<CardState> = emptyList(),
+    val window: Map<Long, WordBundle> = emptyMap(),
+    val index: Int = 0,
+    val counts: Map<CardFilter, Int> = emptyMap(),
+    val undo: Pair<Int, CardState>? = null,
+) {
+    val size: Int get() = order.size
+    val currentState: CardState? get() = order.getOrNull(index)
+    val current: Pair<WordBundle, CardState>?
+        get() = currentState?.let { state -> window[state.wordId]?.let { it to state } }
+    val canUndo: Boolean get() = undo != null
+}
+
 data class SessionState(
     val items: List<SessionItem> = emptyList(),
     val index: Int = 0,
@@ -54,6 +79,8 @@ data class SessionState(
     val total: Int get() = items.size
     val progress: Float get() = if (items.isEmpty()) 0f else index.toFloat() / items.size
 }
+
+private const val WINDOW = 12
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -76,8 +103,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val update: StateFlow<UpdateState> = _update.asStateFlow()
 
-    private val _cards = MutableStateFlow<List<WordBundle>>(emptyList())
-    val cards: StateFlow<List<WordBundle>> = _cards.asStateFlow()
+    private val _cards = MutableStateFlow(CardsState())
+    val cards: StateFlow<CardsState> = _cards.asStateFlow()
 
     private val _passages = MutableStateFlow<List<Passage>>(emptyList())
     val passages: StateFlow<List<Passage>> = _passages.asStateFlow()
@@ -87,6 +114,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _settingsState = MutableStateFlow(SettingsState())
     val settingsState: StateFlow<SettingsState> = _settingsState.asStateFlow()
+
+    private val _quiz = MutableStateFlow(QuizSetup())
+    val quiz: StateFlow<QuizSetup> = _quiz.asStateFlow()
 
     private val _addText = MutableStateFlow("")
     val addText: StateFlow<String> = _addText.asStateFlow()
@@ -98,14 +128,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         speaker.whenReady { available ->
             repo.setTtsAvailable(available)
             _home.update { it.copy(ttsAvailable = available) }
+            // The voice check finishes after this block has already asked for
+            // the quiz counts, and three of the types are only offerable once
+            // it comes back. Recount rather than leave listening hidden on a
+            // phone that can in fact speak.
+            loadQuizSetup()
         }
         refresh()
         loadLibrary()
+        loadQuizSetup()
         if (settings.autoCheckUpdates) checkForUpdate()
     }
 
     private fun loadLibrary() = viewModelScope.launch {
-        _cards.value = repo.allWords()
+        loadCards(_cards.value.filter)
         _passages.value = repo.passages()
         _patterns.value = repo.grammarPatterns()
         refreshSettings()
@@ -121,6 +157,98 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             userWordCount = repo.userWordCount(),
             deckWords = repo.deckStats().words,
         )
+    }
+
+    // ---- quiz -------------------------------------------------------------
+
+    private fun loadQuizSetup() = viewModelScope.launch {
+        _quiz.value = _quiz.value.copy(
+            types = io.tr8.yybijika.exercise.Registry.all,
+            available = repo.quizAvailability(),
+        )
+    }
+
+    fun selectQuizType(id: String?) { _quiz.value = _quiz.value.copy(selected = id) }
+
+    fun setQuizLength(n: Int) { _quiz.value = _quiz.value.copy(length = n) }
+
+    fun startQuiz() = viewModelScope.launch {
+        val setup = _quiz.value
+        _session.value = SessionState()
+        val items = repo.buildSession(setup.length, setup.selected)
+        _session.value = SessionState(items = items, finished = items.isEmpty())
+    }
+
+    // ---- the swipe deck ---------------------------------------------------
+
+    fun loadCards(filter: CardFilter = _cards.value.filter) = viewModelScope.launch {
+        val order = repo.cardOrder(filter)
+        _cards.value = CardsState(
+            filter = filter,
+            order = order,
+            index = 0,
+            counts = tallies(),
+            undo = null,
+        )
+        fillWindow(0)
+    }
+
+    /**
+     * Load the words around the current position.
+     *
+     * A window rather than the whole slice, because the screen shows one card
+     * and the next one only has to be ready by the time a swipe lands.
+     */
+    private fun fillWindow(index: Int) = viewModelScope.launch {
+        val state = _cards.value
+        val ids = state.order
+            .subList(index.coerceAtMost(state.size), (index + WINDOW).coerceAtMost(state.size))
+            .map { it.wordId }
+        if (ids.isEmpty()) return@launch
+        val fetched = repo.cardWindow(ids.filterNot { it in state.window })
+        if (fetched.isEmpty()) return@launch
+        _cards.value = _cards.value.copy(window = _cards.value.window + fetched)
+    }
+
+    private suspend fun tallies(): Map<CardFilter, Int> {
+        val raw = repo.cardCounts()
+        return mapOf(
+            CardFilter.DUE to (raw["due"] ?: 0),
+            CardFilter.STRUGGLING to (raw[CardState.STATE_STRUGGLING] ?: 0),
+            CardFilter.LEARNING to (raw[CardState.STATE_LEARNING] ?: 0),
+            CardFilter.KNOWN to (raw[CardState.STATE_KNOWN] ?: 0),
+            CardFilter.RETIRED to (raw[CardState.STATE_RETIRED] ?: 0),
+        )
+    }
+
+    fun swipe(swipe: CardDeck.Swipe) = viewModelScope.launch {
+        val state = _cards.value
+        val (word, before) = state.current ?: return@launch
+        repo.swipe(word.id, swipe)
+
+        // Advancing rather than removing keeps the list stable under the finger;
+        // the slice is only rebuilt when the filter changes or the pass ends.
+        // The tallies do refresh every swipe though — a chip that still reads
+        // zero after you have just swiped a card into that bucket is a lie.
+        _cards.value = state.copy(
+            index = state.index + 1,
+            undo = state.index to before,
+            counts = tallies(),
+        )
+        if (state.index + 1 >= state.size) loadCards(state.filter)
+        else fillWindow(state.index + 1)
+    }
+
+    fun undoSwipe() = viewModelScope.launch {
+        val state = _cards.value
+        val (index, before) = state.undo ?: return@launch
+        repo.restoreCardState(before)
+        _cards.value = state.copy(index = index, undo = null, counts = tallies())
+    }
+
+    fun reviveCard(wordId: Long) = viewModelScope.launch {
+        repo.revive(wordId)
+        loadCards(_cards.value.filter)
     }
 
     // ---- settings --------------------------------------------------------

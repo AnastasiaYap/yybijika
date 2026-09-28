@@ -74,6 +74,33 @@ data class UserWord(
     val source: String = "notes",
 )
 
+/**
+ * How well you know a word, as judged by hand on the Cards screen.
+ *
+ * Deliberately separate from [Mastery], which tracks four skills per word and is
+ * driven by graded answers. This is the coarser judgement you make while leafing
+ * through the deck — "yes", "no", "done with this one" — and it needs its own
+ * schedule because the two are answering different questions. A word you can
+ * read on sight but cannot hear should be retired here and still due in Review.
+ */
+@Entity(tableName = "card_state")
+data class CardState(
+    @PrimaryKey val wordId: Long,
+    /** learning | struggling | known | retired */
+    val state: String = STATE_LEARNING,
+    val box: Int = 0,
+    @ColumnInfo(name = "due_at") val dueAt: Long = 0,      // epoch day
+    @ColumnInfo(name = "seen_count") val seenCount: Int = 0,
+    @ColumnInfo(name = "touched_at") val touchedAt: Long = 0,
+) {
+    companion object {
+        const val STATE_LEARNING = "learning"
+        const val STATE_STRUGGLING = "struggling"
+        const val STATE_KNOWN = "known"
+        const val STATE_RETIRED = "retired"
+    }
+}
+
 @Entity(tableName = "daily")
 data class Daily(
     @PrimaryKey val date: Long,        // epoch day
@@ -150,13 +177,33 @@ interface ProgressDao {
 
     @Query("DELETE FROM user_word WHERE id = :id")
     suspend fun deleteUserWord(id: Long)
+
+    // ---- card state --------------------------------------------------
+
+    @Query("SELECT * FROM card_state")
+    suspend fun allCardStates(): List<CardState>
+
+    @Query("SELECT * FROM card_state WHERE wordId = :wordId")
+    suspend fun cardState(wordId: Long): CardState?
+
+    @Upsert
+    suspend fun putCardState(state: CardState)
+
+    @Query("SELECT state, COUNT(*) AS n FROM card_state GROUP BY state")
+    suspend fun cardStateCounts(): List<StateCount>
+
+    @Query("SELECT COUNT(*) FROM card_state WHERE state != 'retired' AND due_at <= :today")
+    suspend fun cardsDue(today: Long): Int
 }
 
 data class SkillCount(val skill: String, val n: Int)
 
+data class StateCount(val state: String, val n: Int)
+
 @Database(
-    entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class],
-    version = 2,
+    entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class,
+                CardState::class],
+    version = 3,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -186,6 +233,21 @@ abstract class ProgressDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS card_state (
+                         wordId INTEGER PRIMARY KEY NOT NULL,
+                         state TEXT NOT NULL DEFAULT 'learning',
+                         box INTEGER NOT NULL DEFAULT 0,
+                         due_at INTEGER NOT NULL DEFAULT 0,
+                         seen_count INTEGER NOT NULL DEFAULT 0,
+                         touched_at INTEGER NOT NULL DEFAULT 0
+                       )"""
+                )
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
@@ -194,7 +256,7 @@ abstract class ProgressDb : RoomDatabase() {
                 // a destructive migration would throw away the user's progress.
                 // Version 2 only adds user_word; Room handles that automatically
                 // once the migration is declared.
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { instance = it }
         }

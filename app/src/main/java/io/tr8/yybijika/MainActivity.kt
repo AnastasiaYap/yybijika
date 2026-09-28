@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -39,8 +40,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.tr8.yybijika.ui.AddNotesScreen
 import io.tr8.yybijika.ui.AppViewModel
 import io.tr8.yybijika.ui.BrowseScreen
-import io.tr8.yybijika.ui.FlashcardsScreen
+import io.tr8.yybijika.ui.CardsScreen
 import io.tr8.yybijika.ui.HomeScreen
+import io.tr8.yybijika.ui.QuizScreen
 import io.tr8.yybijika.ui.ReadScreen
 import io.tr8.yybijika.ui.SessionScreen
 import io.tr8.yybijika.ui.SettingsScreen
@@ -57,13 +59,13 @@ import io.tr8.yybijika.ui.theme.YybijikaTheme
 private enum class Tab(val label: String, val zh: String, val icon: ImageVector) {
     HOME("Home", "家", Icons.Outlined.CheckCircle),
     CARDS("Cards", "卡", Icons.Filled.Style),
+    QUIZ("Quiz", "测", Icons.Filled.Quiz),
     REVIEW("Review", "复", Icons.Outlined.School),
     READ("Read", "读", Icons.AutoMirrored.Filled.MenuBook),
-    ADD("Add", "加", Icons.Filled.Add),
 }
 
 /** Screens pushed on top of a tab rather than being one. */
-private enum class Overlay { NONE, SESSION, BROWSE, DETAIL, SETTINGS }
+private enum class Overlay { NONE, SESSION, QUIZ_RUN, BROWSE, DETAIL, SETTINGS, ADD }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,6 +92,7 @@ private fun App(vm: AppViewModel = viewModel()) {
     val settings by vm.settingsState.collectAsState()
     val addText by vm.addText.collectAsState()
     val addState by vm.addState.collectAsState()
+    val quiz by vm.quiz.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
     // way to learn they came back with it is to look again on resume.
@@ -123,6 +126,8 @@ private fun App(vm: AppViewModel = viewModel()) {
                         Text(
                             when (overlay) {
                                 Overlay.SESSION -> "Review"
+                                Overlay.QUIZ_RUN -> "Quiz"
+                                Overlay.ADD -> "Add notes"
                                 Overlay.BROWSE -> "Search"
                                 Overlay.DETAIL -> detail?.first?.hanzi.orEmpty()
                                 Overlay.SETTINGS -> "Settings"
@@ -156,7 +161,7 @@ private fun App(vm: AppViewModel = viewModel()) {
         Box(Modifier.padding(inner)) {
             if (showingOverlay) {
                 when (overlay) {
-                    Overlay.SESSION -> SessionScreen(
+                    Overlay.SESSION, Overlay.QUIZ_RUN -> SessionScreen(
                         state = session,
                         previews = vm.previews(),
                         onReveal = vm::reveal,
@@ -184,6 +189,19 @@ private fun App(vm: AppViewModel = viewModel()) {
                         )
                     }
 
+                    Overlay.ADD -> AddNotesScreen(
+                        text = addText,
+                        state = addState,
+                        hasKey = settings.hasKey,
+                        onTextChange = vm::setAddText,
+                        onParse = vm::parseNotes,
+                        onFill = vm::fillBlanks,
+                        onToggleCard = vm::toggleCard,
+                        onSave = vm::saveCards,
+                        onReset = vm::resetAdd,
+                        onOpenSettings = { overlay = Overlay.SETTINGS },
+                    )
+
                     Overlay.SETTINGS -> SettingsScreen(
                         state = settings,
                         update = update,
@@ -209,16 +227,20 @@ private fun App(vm: AppViewModel = viewModel()) {
                         onStudy = { vm.startSession(); overlay = Overlay.SESSION },
                         onBrowse = { overlay = Overlay.BROWSE },
                         onSettings = { overlay = Overlay.SETTINGS },
+                        onAddNotes = { overlay = Overlay.ADD },
                         onDownloadUpdate = vm::downloadUpdate,
                         onInstallUpdate = vm::installUpdate,
                         onGrantInstallPermission = vm::grantInstallPermission,
                         onDismissUpdate = vm::dismissUpdate,
                     )
 
-                    Tab.CARDS -> FlashcardsScreen(
-                        words = cards,
+                    Tab.CARDS -> CardsScreen(
+                        state = cards,
+                        onSwipe = vm::swipe,
+                        onUndo = vm::undoSwipe,
+                        onFilter = { vm.loadCards(it) },
+                        onRevive = vm::reviveCard,
                         onSpeak = vm::speak,
-                        onStudyThis = { vm.startSession(); overlay = Overlay.SESSION },
                     )
 
                     Tab.REVIEW -> {
@@ -237,17 +259,11 @@ private fun App(vm: AppViewModel = viewModel()) {
                         onSpeak = vm::speak,
                     )
 
-                    Tab.ADD -> AddNotesScreen(
-                        text = addText,
-                        state = addState,
-                        hasKey = settings.hasKey,
-                        onTextChange = vm::setAddText,
-                        onParse = vm::parseNotes,
-                        onFill = vm::fillBlanks,
-                        onToggleCard = vm::toggleCard,
-                        onSave = vm::saveCards,
-                        onReset = vm::resetAdd,
-                        onOpenSettings = { overlay = Overlay.SETTINGS },
+                    Tab.QUIZ -> QuizScreen(
+                        setup = quiz,
+                        onSelectType = vm::selectQuizType,
+                        onLength = vm::setQuizLength,
+                        onStart = { vm.startQuiz(); overlay = Overlay.QUIZ_RUN },
                     )
                 }
             }

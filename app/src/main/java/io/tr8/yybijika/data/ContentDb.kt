@@ -25,13 +25,20 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         private const val ASSET = "content.db"
         private const val LOCAL = "content.db"
 
+
         fun open(context: Context): ContentDb {
             val target = File(context.filesDir, LOCAL)
             val packaged = packagedVersion(context)
 
-            // Copy on first run and whenever a release brings a newer deck. The
-            // stored version is what tells the two apart; comparing file sizes
-            // would miss a same-size content change.
+            // Copy on first run and whenever the APK itself has been replaced.
+            //
+            // Keyed on the install timestamp rather than the version code,
+            // because the deck's schema travels with the code that queries it:
+            // add a column in pipeline/schema.sql, install without bumping the
+            // version, and the new SQL runs against the old copied file and
+            // throws "no such column" on the first screen. The install time
+            // changes on every install, release and debug alike, which is
+            // exactly when the asset could have changed.
             if (!target.exists() || installedVersion(context) != packaged) {
                 context.assets.open(ASSET).use { input ->
                     target.outputStream().use { input.copyTo(it) }
@@ -52,13 +59,13 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         private fun packagedVersion(context: Context): Long =
             context.packageManager
                 .getPackageInfo(context.packageName, 0)
-                .longVersionCode
+                .lastUpdateTime
 
         private fun installedVersion(context: Context): Long =
-            prefs(context).getLong("content_version", -1)
+            prefs(context).getLong("content_installed_at", -1)
 
         private fun markInstalled(context: Context, version: Long) {
-            prefs(context).edit().putLong("content_version", version).apply()
+            prefs(context).edit().putLong("content_installed_at", version).apply()
         }
     }
 
@@ -108,7 +115,7 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         val examples = mutableMapOf<Long, MutableList<ExampleSentence>>()
         db.rawQuery(
             "SELECT word_id, zh, pinyin, gloss, gloss_en, contains_target, " +
-                "token_count FROM example WHERE word_id IN ($placeholders) " +
+                "token_count, segments FROM example WHERE word_id IN ($placeholders) " +
                 "ORDER BY word_id, id", args
         ).use { c ->
             while (c.moveToNext()) {
@@ -120,6 +127,8 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                         glossEn = c.getString(4),
                         containsTarget = c.getInt(5) == 1,
                         tokenCount = c.getInt(6),
+                        segments = c.getString(7)
+                            ?.split(" ")?.filter { it.isNotBlank() }.orEmpty(),
                     )
                 )
             }
@@ -312,6 +321,45 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                 }
             }
         }
+    }
+
+    /**
+     * How many words could produce each kind of question.
+     *
+     * Answered in SQL rather than by generating every exercise for every word:
+     * the scan was 1,173 words times eight types with a distractor query each,
+     * which ran on startup and stalled the first screen. The predicates mirror
+     * the Requirement sets in the registry, and a test keeps the two honest.
+     */
+    fun questionAvailability(): Map<String, Int> = Selectors.byType.mapValues { (_, sql) ->
+        db.rawQuery("SELECT COUNT(*) FROM ($sql)", null)
+            .use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
+
+    /** Every measure word in the deck, for measure-word distractors. */
+    fun measureWords(): List<String> = db.rawQuery(
+        """SELECT DISTINCT related_hanzi FROM relation
+           WHERE kind = 'measure' AND note LIKE '一' || related_hanzi || '%'""",
+        null,
+    ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
+
+    /**
+     * Word ids that can produce one kind of question, in random order.
+     *
+     * The same predicates as [questionAvailability], returning the rows rather
+     * than the count. A single-type quiz used to load a bundle for every word in
+     * the deck and then throw away the ones the type could not use, which cost
+     * about twelve seconds before the first question appeared.
+     */
+    fun candidatesFor(typeId: String, limit: Int): List<Long> {
+        val where = Selectors.byType[typeId] ?: return emptyList()
+        val ids = mutableListOf<Long>()
+        db.rawQuery("SELECT word_id FROM ($where) ORDER BY RANDOM() LIMIT ?",
+            arrayOf(limit.toString())).use {
+            while (it.moveToNext()) ids += it.getLong(0)
+        }
+        return ids
     }
 
     fun deckStats(): DeckStats = db.rawQuery(

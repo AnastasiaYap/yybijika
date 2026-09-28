@@ -34,6 +34,7 @@ fun HomeScreen(
     onStudy: () -> Unit,
     onBrowse: () -> Unit,
     onSettings: () -> Unit,
+    onAddNotes: () -> Unit,
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: () -> Unit,
     onGrantInstallPermission: () -> Unit,
@@ -123,6 +124,9 @@ fun HomeScreen(
 
         OutlinedButton(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
             Text("Search the deck")
+        }
+        OutlinedButton(onClick = onAddNotes, modifier = Modifier.fillMaxWidth()) {
+            Text("Add notes")
         }
         OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) {
             Text("Settings")

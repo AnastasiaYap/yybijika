@@ -34,8 +34,8 @@ android {
         applicationId = "io.tr8.yybijika"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Where the in-app updater looks for new releases.
@@ -97,4 +97,8 @@ dependencies {
     // The real implementation makes the release-parsing tests runnable on the JVM.
     testImplementation(libs.json)
     testImplementation(libs.coroutines.test)
+    // So a JVM test can run ContentDb's own SQL against the shipped deck,
+    // which is the only way the coverage counts and the exercise registry
+    // can be checked against each other rather than kept in step by hand.
+    testImplementation(libs.sqlite.jdbc)
 }

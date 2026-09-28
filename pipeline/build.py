@@ -22,6 +22,7 @@ import curate  # noqa: E402
 import essays  # noqa: E402
 import lex  # noqa: E402
 import relations  # noqa: E402
+import segment  # noqa: E402
 import notes  # noqa: E402
 import tags  # noqa: E402
 import zh  # noqa: E402
@@ -122,6 +123,8 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
         print(f"    ! correction for {stale!r} matched nothing")
 
     merged = merge_entries(entries)
+    # Every headword becomes a tile the segmenter must not break apart.
+    segment.load(merged.keys())
 
     word_ids: dict[str, int] = {}
     for hanzi, entry in merged.items():
@@ -195,8 +198,8 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
             conn.execute(
                 """INSERT INTO example
                    (word_id, zh, pinyin, gloss, gloss_en, source,
-                    contains_target, token_count)
-                   VALUES (?,?,?,?,?,?,?,?)""",
+                    contains_target, token_count, segments, segment_count)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (
                     wid,
                     simp,
@@ -205,6 +208,8 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
                     "written" if hanzi in curate.card_table.CARDS else "notes",
                     int(hanzi in simp),
                     tokens_in(simp),
+                    " ".join(pieces := segment.segment(simp)),
+                    len(pieces),
                 ),
             )
 
@@ -256,8 +261,20 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
         link(word, other, "antonym", note)
         link(other, word, "antonym", note)
 
+    # Measure words are the one link where the far side need not be vocabulary.
+    # 间 and 座 are answers, not headwords, and requiring both ends to be in the
+    # deck threw away two thirds of the pairs — the drill is about the noun.
     for noun, measure in relations.MEASURE_WORDS:
-        link(noun, measure, "measure", f"一{measure}{noun}")
+        if noun not in word_ids:
+            continue
+        conn.execute(
+            """INSERT OR IGNORE INTO relation
+               (word_id, related_id, related_hanzi, kind, note) VALUES (?,?,?,?,?)""",
+            (word_ids[noun], word_ids.get(measure), measure, "measure",
+             f"一{measure}{noun}"),
+        )
+        # The reverse direction is only interesting when the measure word is
+        # itself something the notes taught.
         link(measure, noun, "measure", f"一{measure}{noun}")
 
     # Reading passages, written around words that are already in the deck.

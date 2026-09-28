@@ -35,6 +35,34 @@ data class WordBundle(
     /** Examples usable for a cloze: the word has to actually appear in them. */
     val clozeExamples: List<ExampleSentence>
         get() = examples.filter { it.containsTarget }
+
+    /** Sentences long enough to be worth rebuilding from tiles. */
+    val buildableExamples: List<ExampleSentence>
+        get() = clozeExamples.filter { it.segmentCount >= 4 }
+
+    /** Sentences that carry a translation, so they can be asked for in reverse. */
+    val translatableExamples: List<ExampleSentence>
+        get() = examples.filter { it.segmentCount >= 4 && !it.gloss.isNullOrBlank() }
+
+    /**
+     * The measure word this noun takes, when the notes recorded one.
+     *
+     * Only when this word is the noun. The link is stored from both ends, so
+     * 条 also carries a measure relation to 裤子 — and asking "which measure word
+     * does 条 take" is nonsense.
+     */
+    val measures: List<Relation>
+        get() = relations.filter {
+            it.kind == "measure" && it.note?.startsWith("一" + it.hanzi) == true
+        }
+
+    /** Hand-written same/opposite links — the ones that teach a distinction. */
+    val semanticLinks: List<Relation>
+        get() = relations.filter { it.kind == "synonym" || it.kind == "antonym" }
+
+    /** Other words built from a character this one contains. */
+    val sharesCharacterWith: List<Relation>
+        get() = relations.filter { it.kind == "shares" && !it.note.isNullOrBlank() }
 }
 
 /**
@@ -58,7 +86,17 @@ data class ExampleSentence(
     val glossEn: String?,      // English
     val containsTarget: Boolean,
     val tokenCount: Int,
-)
+    /**
+     * The sentence cut at word boundaries, by pipeline/segment.py.
+     *
+     * Tiles are words rather than characters because a character jigsaw is not
+     * a language question: 他 想 提 高 自 己 has one plausible order for someone
+     * who recognises none of it, where 他 / 想 / 提高 / 自己 asks something real.
+     */
+    val segments: List<String> = emptyList(),
+) {
+    val segmentCount: Int get() = segments.size
+}
 
 /**
  * What a word must have before a given exercise can be built from it.
@@ -76,6 +114,18 @@ enum class Requirement {
 
     /** At least one word this is genuinely confusable with. */
     CONFUSABLE,
+
+    /** A recorded measure word, with this word as the noun. */
+    MEASURE,
+
+    /** A hand-written synonym or antonym link. */
+    SEMANTIC_LINK,
+
+    /** Two or more other words built from a character this one contains. */
+    SHARED_CHARACTER,
+
+    /** An example long enough to rebuild, carrying a translation to work from. */
+    TRANSLATABLE,
 
     /**
      * A Chinese voice is installed on this device.
@@ -138,6 +188,8 @@ sealed interface Exercise {
         val prompt: String,
         val tiles: List<String>,
         val solution: List<String>,
+        /** Dictation: the sentence is played, and [prompt] is the instruction. */
+        val speak: String? = null,
         override val explanation: String? = null,
     ) : Exercise
 
@@ -181,6 +233,15 @@ interface DeckContext {
     fun distractorGlosses(word: WordBundle, count: Int): List<String>
 
     fun distractorHanzi(word: WordBundle, count: Int): List<String>
+
+    /**
+     * Every measure word the deck knows, for measure-word distractors.
+     *
+     * A property of the deck rather than of the word: the wrong answers to
+     * "一 __ 裤子" have to be other real measure words, or the question answers
+     * itself.
+     */
+    val measureWords: List<String>
 
     /** True when the device actually has a Chinese voice installed. */
     val ttsAvailable: Boolean
