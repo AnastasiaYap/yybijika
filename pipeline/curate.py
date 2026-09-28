@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import curation
-import entries as entry_table
+import cards as card_table
 import lex
 import zh
 
@@ -105,7 +105,7 @@ def apply(entries: list[lex.Entry]) -> tuple[list[lex.Entry], Report]:
     by_hanzi = {e.hanzi: e for e in entries}
 
     # 2. Demote ------------------------------------------------------------
-    for sentence, (owner, gloss) in curation.DEMOTE.items():
+    for sentence, (owner, gloss, *_rest) in curation.DEMOTE.items():
         source = by_hanzi.get(sentence)
         target = by_hanzi.get(owner)
         if target is None:
@@ -121,7 +121,7 @@ def apply(entries: list[lex.Entry]) -> tuple[list[lex.Entry], Report]:
         report.demoted += 1
 
     # 3. Drop --------------------------------------------------------------
-    doomed = set(curation.DROP) | set(entry_table.NOT_WORDS) | {
+    doomed = set(curation.DROP) | set(card_table.NOT_WORDS) | {
         s for s in curation.DEMOTE if s not in curation.RENAME
     }
     # A rename rescues a word from the drop list.
@@ -162,9 +162,10 @@ def apply(entries: list[lex.Entry]) -> tuple[list[lex.Entry], Report]:
     # 5. Clean entries -----------------------------------------------------
     # A hand-written entry replaces the note's gloss outright and brings its own
     # example. Applied after GLOSSES so it wins where both cover a word.
-    for hanzi, (indonesian, english, example, example_gloss) in entry_table.ENTRIES.items():
+    for hanzi, card in card_table.CARDS.items():
         if hanzi in doomed:
             continue
+        indonesian, english = card["id"], card["en"]
         entry = by_hanzi.get(hanzi)
         if entry is None:
             entry = lex.Entry(hanzi=hanzi, page=0, line=0, raw="(added by curation)")
@@ -181,9 +182,12 @@ def apply(entries: list[lex.Entry]) -> tuple[list[lex.Entry], Report]:
         # leave 烤鸭 illustrated by a sentence about translating. Now that every
         # word has a checked sentence, the guesses are only noise — except the
         # ones placed by hand in DEMOTE, which are kept.
-        if example:
+        written = [zh_line for zh_line, _, _ in card["ex"]]
+        if written:
             demoted = [e for e in entry.examples if e in curation.DEMOTE]
-            entry.examples = [example] + [e for e in demoted if e != example]
+            entry.examples = written + [e for e in demoted if e not in written]
+        if card["note"]:
+            entry.usage_notes = [card["note"]]
         report.written += 1
 
     # 6. Pinyin ------------------------------------------------------------
@@ -208,16 +212,18 @@ def apply(entries: list[lex.Entry]) -> tuple[list[lex.Entry], Report]:
     return entries, report
 
 
-def example_gloss_for(hanzi: str, sentence: str) -> str | None:
-    """The translation that belongs to a hand-placed example, if there is one."""
-    written = entry_table.ENTRIES.get(hanzi)
-    if written and written[2] == sentence:
-        return written[3]
-    # Sentences moved under a word by DEMOTE carry their translation there.
+def example_glosses_for(hanzi: str, sentence: str) -> tuple[str | None, str | None]:
+    """The (Indonesian, English) translations of a hand-placed example."""
+    card = card_table.CARDS.get(hanzi)
+    if card:
+        for zh_line, indonesian, english in card["ex"]:
+            if zh_line == sentence:
+                return indonesian or None, english or None
+    # Sentences moved under a word by DEMOTE carry their Indonesian gloss there.
     demoted = curation.DEMOTE.get(sentence)
     if demoted and demoted[0] == hanzi:
-        return demoted[1]
-    return None
+        return demoted[1], (demoted[2] if len(demoted) > 2 else None)
+    return None, None
 
 
 def corrected_pinyin(hanzi: str) -> str | None:

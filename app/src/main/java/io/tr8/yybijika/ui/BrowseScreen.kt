@@ -125,7 +125,7 @@ fun WordDetailScreen(word: WordBundle, mastery: Map<Skill, Mastery>, onSpeak: (S
         if (word.usageNotes.isNotEmpty()) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Notes", fontWeight = FontWeight.SemiBold)
+                    Text("How to use it", fontWeight = FontWeight.SemiBold)
                     word.usageNotes.forEach {
                         Text(it, style = MaterialTheme.typography.bodyMedium)
                     }
@@ -143,6 +143,14 @@ fun WordDetailScreen(word: WordBundle, mastery: Map<Skill, Mastery>, onSpeak: (S
                             ex.pinyin?.let {
                                 Text(it, style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary)
+                            }
+                            ex.gloss?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            ex.glossEn?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

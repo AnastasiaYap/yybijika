@@ -45,7 +45,8 @@ private fun example(zh: String = "这里很热闹。", target: String = "热闹"
     ExampleSentence(
         zh = zh,
         pinyin = "zhè lǐ hěn rè nào",
-        gloss = "It is lively here.",
+        gloss = "Di sini ramai.",
+        glossEn = "It is lively here.",
         containsTarget = zh.contains(target),
         tokenCount = zh.count { it.code in 0x4E00..0x9FFF },
     )

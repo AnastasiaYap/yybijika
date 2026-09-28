@@ -67,6 +67,11 @@ def main() -> int:
         ("with a gloss", "SELECT COUNT(*) FROM word_capability WHERE sense_count > 0"),
         ("pinyin trusted", "SELECT COUNT(*) FROM word WHERE pinyin_verified = 1"),
         ("with an example", "SELECT COUNT(*) FROM word_capability WHERE cloze_count > 0"),
+        ("with 2+ examples",
+         "SELECT COUNT(*) FROM (SELECT word_id FROM example GROUP BY word_id HAVING COUNT(*) >= 2)"),
+        ("examples in EN too",
+         "SELECT COUNT(DISTINCT word_id) FROM example WHERE gloss_en IS NOT NULL AND gloss_en != ''"),
+        ("with an explanation", "SELECT COUNT(DISTINCT word_id) FROM usage_note"),
         ("with a relation", "SELECT COUNT(DISTINCT word_id) FROM relation"),
         ("with a usage note", "SELECT COUNT(DISTINCT word_id) FROM usage_note"),
         ("tagged", "SELECT COUNT(*) FROM word_capability WHERE tag_count > 0"),
@@ -96,6 +101,17 @@ def main() -> int:
          "unlocks listening and typing"),
         ("topic tags", "SELECT COUNT(*) FROM word_capability WHERE tag_count = 0",
          "makes multiple-choice distractors plausible"),
+        ("an explanation",
+         "SELECT COUNT(*) FROM word w WHERE NOT EXISTS"
+         " (SELECT 1 FROM usage_note n WHERE n.word_id = w.id)",
+         "tells you which near-synonym to use and when"),
+        ("a second example",
+         "SELECT COUNT(*) FROM (SELECT w.id FROM word w LEFT JOIN example e"
+         " ON e.word_id = w.id GROUP BY w.id HAVING COUNT(e.id) < 2)",
+         "one sentence shows a word once; two show its range"),
+        ("English example glosses",
+         "SELECT COUNT(*) FROM example WHERE gloss_en IS NULL OR gloss_en = ''",
+         "examples currently translate to Indonesian only"),
     ]
     for label, sql, why in backlog:
         n = conn.execute(sql).fetchone()[0]

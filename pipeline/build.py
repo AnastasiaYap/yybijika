@@ -192,14 +192,15 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
             seen_examples.add(key)
             conn.execute(
                 """INSERT INTO example
-                   (word_id, zh, pinyin, gloss, source, contains_target, token_count)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   (word_id, zh, pinyin, gloss, gloss_en, source,
+                    contains_target, token_count)
+                   VALUES (?,?,?,?,?,?,?,?)""",
                 (
                     wid,
                     simp,
                     zh.read_sentence(simp),
-                    curate.example_gloss_for(hanzi, simp),
-                    "written" if hanzi in curate.entry_table.ENTRIES else "notes",
+                    *curate.example_glosses_for(hanzi, simp),
+                    "written" if hanzi in curate.card_table.CARDS else "notes",
                     int(hanzi in simp),
                     tokens_in(simp),
                 ),

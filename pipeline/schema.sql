@@ -52,7 +52,8 @@ CREATE TABLE example (
     word_id  INTEGER NOT NULL REFERENCES word(id) ON DELETE CASCADE,
     zh       TEXT NOT NULL,
     pinyin   TEXT,
-    gloss    TEXT,
+    gloss    TEXT,                    -- Indonesian
+    gloss_en TEXT,                    -- English
     source   TEXT NOT NULL DEFAULT 'notes',
     -- An example is only usable for a cloze if the target word appears in it
     -- verbatim; computed once at build time rather than re-checked per session.

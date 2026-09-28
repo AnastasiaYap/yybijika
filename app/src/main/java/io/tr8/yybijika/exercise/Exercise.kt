@@ -30,7 +30,8 @@ data class WordBundle(
 data class ExampleSentence(
     val zh: String,
     val pinyin: String?,
-    val gloss: String?,
+    val gloss: String?,        // Indonesian
+    val glossEn: String?,      // English
     val containsTarget: Boolean,
     val tokenCount: Int,
 )

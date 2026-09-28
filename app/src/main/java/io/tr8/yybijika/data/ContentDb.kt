@@ -106,8 +106,9 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
 
         val examples = mutableMapOf<Long, MutableList<ExampleSentence>>()
         db.rawQuery(
-            "SELECT word_id, zh, pinyin, gloss, contains_target, token_count " +
-                "FROM example WHERE word_id IN ($placeholders)", args
+            "SELECT word_id, zh, pinyin, gloss, gloss_en, contains_target, " +
+                "token_count FROM example WHERE word_id IN ($placeholders) " +
+                "ORDER BY word_id, id", args
         ).use { c ->
             while (c.moveToNext()) {
                 examples.getOrPut(c.getLong(0)) { mutableListOf() }.add(
@@ -115,8 +116,9 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                         zh = c.getString(1),
                         pinyin = c.getString(2),
                         gloss = c.getString(3),
-                        containsTarget = c.getInt(4) == 1,
-                        tokenCount = c.getInt(5),
+                        glossEn = c.getString(4),
+                        containsTarget = c.getInt(5) == 1,
+                        tokenCount = c.getInt(6),
                     )
                 )
             }

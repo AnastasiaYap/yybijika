@@ -220,26 +220,37 @@ private fun CardBack(word: WordBundle, onSpeak: (String) -> Unit, onStudyThis: (
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        // The explanation sits between the meaning and the examples, because it
+        // is the thing that decides which of two near-synonyms you reach for.
         word.usageNotes.forEach {
             Text(
                 it,
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.primary,
             )
         }
-        word.examples.firstOrNull()?.let { example ->
+
+        word.examples.forEach { example ->
             Column(
-                Modifier.padding(top = 6.dp),
+                Modifier.padding(top = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(example.zh, style = HanziInline)
+                Text(example.zh, style = HanziInline, textAlign = TextAlign.Center)
                 example.pinyin?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.primary)
                 }
                 example.gloss?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                example.glossEn?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

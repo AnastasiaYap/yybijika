@@ -87,6 +87,7 @@ class Repo(
                     zh = it,
                     pinyin = examplePinyin,
                     gloss = exampleGloss,
+                    glossEn = null,
                     containsTarget = it.contains(hanzi),
                     tokenCount = it.count { c -> c.code in 0x4E00..0x9FFF },
                 )
