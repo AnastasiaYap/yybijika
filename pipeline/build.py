@@ -117,6 +117,8 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
         )
     entries, report = curate.apply(doc.entries)
     print(f"  {report}")
+    for stale in report.unused:
+        print(f"    ! correction for {stale!r} matched nothing")
 
     merged = merge_entries(entries)
 

@@ -125,9 +125,11 @@ def apply(entries: list[lex.Entry]) -> tuple[list[lex.Entry], Report]:
     # A rename rescues a word from the drop list.
     doomed -= set(curation.RENAME.values())
     kept = []
+    matched_drops: set[str] = set()
     for entry in entries:
         if entry.hanzi in doomed:
             report.dropped += 1
+            matched_drops.add(entry.hanzi)
             continue
         kept.append(entry)
     entries = kept
@@ -158,10 +160,17 @@ def apply(entries: list[lex.Entry]) -> tuple[list[lex.Entry], Report]:
         if hanzi in by_hanzi:
             report.repinned += 1
 
+    # A correction that matched nothing is a correction that is not doing its
+    # job — usually a headword typed slightly differently from the one in the
+    # notes, or an edit that was written against a line that had already moved.
+    # Silent no-ops are the failure mode this whole file is most prone to.
+    # A drop that fired removes the word, so "is it still here" cannot be the
+    # test — what matters is whether it ever matched anything.
+    present = {e.hanzi for e in entries}
     report.unused = sorted(
-        set(curation.GLOSSES) | set(curation.PINYIN)
-        - {e.hanzi for e in entries}
-    ) if False else []
+        (set(curation.DROP) - matched_drops - set(curation.RENAME))
+        | (set(curation.PINYIN) - present)
+    )
 
     return entries, report
 

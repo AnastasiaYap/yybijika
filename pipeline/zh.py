@@ -47,8 +47,32 @@ def readings_for_char(ch: str) -> tuple[str, ...]:
     return tuple(raw.split(",")) if raw else ()
 
 
+# Characters whose alternate reading actually turns up in modern Mandarin.
+#
+# pypinyin's per-character table lists every reading a character has ever had,
+# including literary and archaic ones, so "does this character have more than one
+# entry" flags roughly a third of the deck — 事, 作, 经, 房 among them, none of
+# which a learner will ever meet read another way. Treating those as uncertain
+# buried the handful that genuinely are, and locked hundreds of correct readings
+# out of the listening and typing drills for no reason.
+#
+# This list is the opposite: characters where picking the wrong reading is a real
+# risk, chosen because both readings are current and common.
+AMBIGUOUS = set(
+    "了着行乐长重好还干得地教少数觉差只便调假种为中会和发分空相应藏散曲血"
+    "尽传大朝兴系冠参宿待ombre".replace("ombre", "")
+    + "占卷强当量露弹载度提供切划称背奔炸盛担挑缝薄恶发几给结将量没难宁"
+    + "撒扫食属somme".replace("somme", "")
+    + "说塞率弄泡便扁称"
+)
+
+
 def is_polyphonic(ch: str) -> bool:
-    return len(readings_for_char(ch)) > 1
+    """True when this character is one a reader could plausibly get wrong.
+
+    Deliberately not "has more than one dictionary reading" — see [AMBIGUOUS].
+    """
+    return ch in AMBIGUOUS and len(readings_for_char(ch)) > 1
 
 
 @dataclass(frozen=True)

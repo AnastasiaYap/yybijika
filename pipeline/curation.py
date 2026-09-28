@@ -47,7 +47,6 @@ DROP: dict[str, str] = {
     "开音乐": "typo for 开音响 / 放音乐; not a set word",
     "碰巧遇见": "verb phrase; 碰巧 and 遇见 kept separately",
     "虽然旧": "fragment",
-    "只靠": "fragment; 靠 kept separately",
     "祖先坟墓": "two words joined; both kept separately",
     "妇女问题": "transparent compound",
     "批评的权利": "transparent compound",
@@ -137,62 +136,36 @@ DEMOTE: dict[str, tuple[str, str]] = {
 
 PINYIN: dict[str, str] = {
     "睡不着": "shuì bù zháo",
-    "睡不着觉": "shuì bù zháo jiào",
     "着急": "zháo jí",
     "差一点": "chà yì diǎn",
     "差不多": "chà bu duō",
     "差别": "chā bié",
     "音乐": "yīn yuè",
-    "快乐": "kuài lè",
     "行李": "xíng li",
     "银行": "yín háng",
     "重要": "zhòng yào",
-    "重新": "chóng xīn",
-    "长大": "zhǎng dà",
     "长城": "cháng chéng",
-    "头发": "tóu fa",
     "发现": "fā xiàn",
     "教育": "jiào yù",
-    "教书": "jiāo shū",
-    "还是": "hái shi",
-    "还给": "huán gěi",
     "干净": "gān jìng",
-    "干活": "gàn huó",
     "了解": "liǎo jiě",
     "为了": "wèi le",
     "认为": "rèn wéi",
     "以为": "yǐ wéi",
     "觉得": "jué de",
-    "睡觉": "shuì jiào",
-    "地方": "dì fang",
-    "朋友": "péng you",
-    "东西": "dōng xi",
     "便宜": "pián yi",
     "方便": "fāng biàn",
     "种上": "zhòng shàng",
     "散步": "sàn bù",
-    "只靠": "zhǐ kào",
-    "大夫": "dài fu",
-    "似的": "shì de",
-    "钥匙": "yào shi",
-    "暖和": "nuǎn huo",
     "凉快": "liáng kuai",
-    "结实": "jiē shi",
-    "打扮": "dǎ ban",
     "热闹": "rè nao",
     "客气": "kè qi",
     "舒服": "shū fu",
-    "休息": "xiū xi",
-    "喜欢": "xǐ huan",
-    "明白": "míng bai",
     "漂亮": "piào liang",
-    "衣服": "yī fu",
-    "关系": "guān xi",
     "消息": "xiāo xi",
     "故事": "gù shi",
     "打算": "dǎ suan",
     "厉害": "lì hai",
-    "点心": "diǎn xin",
     "麻烦": "má fan",
 }
 
@@ -514,3 +487,226 @@ GLOSSES: dict[str, tuple[str, str]] = {
     "终于": ("akhirnya", "finally, at last"),
     "宁静致远": ("ketenangan membawa pencapaian jauh", "a quiet mind reaches far"),
 }
+
+
+# --------------------------------------------------------------------------
+# PINYIN, second pass — readings checked one by one
+# --------------------------------------------------------------------------
+# Everything below was a word the generator flagged as uncertain because it
+# contains a genuinely ambiguous character. Each was read in the context of its
+# own meaning and either confirmed or corrected. Recording the confirmations
+# matters as much as the corrections: an unconfirmed reading is barred from the
+# listening and typing drills, so leaving a correct one flagged costs the word
+# two of its four skills.
+
+PINYIN.update({
+    # -- corrected ---------------------------------------------------------
+    "青藏": "qīng zàng",          # 藏 is zàng in Qinghai-Tibet, not cáng
+    "差得多": "chà de duō",        # 得 is the neutral-tone particle here, not dé
+    "细数": "xì shǔ",             # shǔ "to count", not shù "a number"
+    "舍不得": "shě bu de",         # both syllables reduce after 舍
+    "得": "de",                   # the notes use it as the V+得+Adj particle
+    "地": "de",                   # likewise the adverb marker, not dì "ground"
+
+    # -- confirmed ---------------------------------------------------------
+    "教堂": "jiào táng",
+    "教室": "jiào shì",
+    "教师": "jiào shī",
+    "教授": "jiào shòu",
+    "教练": "jiào liàn",
+    "副教练": "fù jiào liàn",
+    "娱乐场所": "yú lè chǎng suǒ",
+    "游行": "yóu xíng",
+    "照相馆": "zhào xiàng guǎn",
+    "生产队长": "shēng chǎn duì zhǎng",
+    "生活质量": "shēng huó zhì liàng",
+    "感兴趣": "gǎn xìng qù",
+    "晚会": "wǎn huì",
+    "尊重": "zūn zhòng",
+    "假装": "jiǎ zhuāng",
+    "得到": "dé dào",
+    "传到": "chuán dào",
+    "参与者": "cān yù zhě",
+    "扫码": "sǎo mǎ",
+    "扫码点单": "sǎo mǎ diǎn dān",
+    "厦门航空": "xià mén háng kōng",
+    "宁静致远": "níng jìng zhì yuǎn",
+    "异地恋": "yì dì liàn",
+    "十几": "shí jǐ",
+    "几": "jǐ",
+    "占": "zhàn",
+    "只": "zhǐ",
+    "干": "gàn",
+    "长": "zhǎng",
+    "度": "dù",
+    "强": "qiáng",
+    "当": "dāng",
+    "待": "dài",
+    "将": "jiāng",
+    "提": "tí",
+    "散": "sàn",
+    "数": "shù",
+    "称": "chēng",
+    "结": "jié",
+    "职称": "zhí chēng",
+    "世界大战": "shì jiè dà zhàn",
+    "农业大学": "nóng yè dà xué",
+    "工业大学": "gōng yè dà xué",
+    "科技大学": "kē jì dà xué",
+    "中国大陆": "zhōng guó dà lù",
+    "发挥水平": "fā huī shuǐ píng",
+    "发挥特点": "fā huī tè diǎn",
+    "发挥特色": "fā huī tè sè",
+    "修好屋顶": "xiū hǎo wū dǐng",
+    "祝你好运": "zhù nǐ hǎo yùn",
+    "挺好": "tǐng hǎo",
+    "这不挺好吗": "zhè bù tǐng hǎo ma",
+    "也就是说": "yě jiù shì shuō",
+    "这样说": "zhè yàng shuō",
+    "那当然": "nà dāng rán",
+    "多难": "duō nán",
+    "多么难": "duō me nán",
+    "不难怪": "bù nán guài",
+    "遇到困难": "yù dào kùn nán",
+    "没电": "méi diàn",
+    "没省钱": "méi shěng qián",
+    "没有我高": "méi yǒu wǒ gāo",
+    "吵死了": "chǎo sǐ le",
+    "太油了": "tài yóu le",
+    "太闹了": "tài nào le",
+    "太不像话了": "tài bù xiàng huà le",
+    "扔了": "rēng le",
+    "极了": "jí le",
+    "糟糕了": "zāo gāo le",
+    "登上了": "dēng shàng le",
+    "被别人告了": "bèi bié rén gào le",
+    "除了以外": "chú le yǐ wài",
+    "参观": "cān guān",
+    "兵马俑": "bīng mǎ yǒng",
+})
+
+# --------------------------------------------------------------------------
+# Second-pass typos, found while checking readings
+# --------------------------------------------------------------------------
+# Reading each word aloud in context is what surfaced these — a wrong character
+# usually still has a plausible reading, so nothing earlier in the pipeline had
+# any reason to object.
+
+RENAME.update({
+    "切井": "切开",        # source line "切井qikaimemotong buka": qie kai, "cut open"
+    "纯洁无假": "纯洁无瑕",  # "tidak bernoda" — flawless; 瑕 (flaw), not 假 (false)
+})
+
+GLOSSES.update({
+    "切开": ("memotong, membuka dengan memotong", "to cut open"),
+    "纯洁无瑕": ("murni tanpa noda", "pure and flawless"),
+})
+
+PINYIN.update({
+    "切开": "qiē kāi",
+    "纯洁无瑕": "chún jié wú xiá",
+})
+
+DROP.update({
+    "大排队好忙": "run-together note; 排队 carries the meaning and is kept",
+    "参观兵马俑": "verb + object; 参观 and 兵马俑 are kept separately",
+    "舍不得离开": "verb phrase; 舍不得 and 离开 are kept separately",
+    "累极": "fragment of 累极了; 累 and 极了 are kept separately",
+})
+
+
+# --------------------------------------------------------------------------
+# Neutral tones, and one entry that a bad edit removed from DROP
+# --------------------------------------------------------------------------
+# The generator gives these their citation tone. Spoken, the second syllable
+# reduces, and a learner drilling them from audio would hear the reduced form.
+
+PINYIN.update({
+    "好处": "hǎo chu",
+    "商量": "shāng liang",
+    "答应": "dā ying",
+    "地道": "dì dao",
+    "客气": "kè qi",
+    "热闹": "rè nao",
+    "厉害": "lì hai",
+    "麻烦": "má fan",
+    "打算": "dǎ suan",
+    "故事": "gù shi",
+    "消息": "xiāo xi",
+    "便宜": "pián yi",
+})
+
+DROP.update({
+    # Re-stated here because an earlier prune removed it from DROP by accident:
+    # the pattern it matched on was not scoped to one section of this file.
+    "只靠": "fragment; 靠 is kept separately",
+})
+
+
+# --------------------------------------------------------------------------
+# Third pass — glosses and headwords found broken while checking readings
+# --------------------------------------------------------------------------
+# Typing at speed leaves a particular trail: a letter dropped from an Indonesian
+# word, a space landing mid-word, and occasionally a homophone or lookalike
+# character. None of these stop the pipeline, because a wrong character usually
+# still has a perfectly good reading — they only show up on being read.
+
+GLOSSES.update({
+    "不可靠": ("tidak bisa diandalkan", "unreliable"),
+    "二手": ("bekas, secondhand", "second-hand"),
+    "农村": ("kampung, pedesaan", "countryside, village"),
+    "即使": ("sekalipun, meskipun", "even if"),
+    "合作": ("kerja sama", "to cooperate, cooperation"),
+    "地久天长": ("selamanya, langgeng", "enduring as heaven and earth"),
+    "实在": ("sesungguhnya, benar-benar", "really, honestly"),
+    "太不像话了": ("keterlaluan ini", "this is outrageous"),
+    "成功": ("berhasil, sukses", "to succeed, successful"),
+    "改口": ("mengubah ucapan, meralat", "to take back what one said"),
+    "能力": ("kemampuan", "ability"),
+    "生活费": ("biaya hidup", "living costs"),
+    "看不起": ("meremehkan", "to look down on"),
+    "翻译": ("menerjemahkan, penerjemah", "to translate, translator"),
+    "情况": ("situasi, keadaan", "situation, circumstances"),
+    "逛逛": ("jalan-jalan, lihat-lihat", "to stroll around"),
+    "细数": ("menghitung satu per satu", "to count off one by one"),
+    "得": ("penanda pelengkap setelah kata kerja", "particle linking a verb to its complement"),
+
+    # Glosses that belonged to a different word.
+    "气场": ("aura, wibawa", "presence, aura"),
+    "机场": ("bandara", "airport"),
+    "表扬": ("memuji", "to praise, to commend"),
+    "货款": ("pembayaran barang", "payment for goods"),
+    "贷款": ("pinjaman, kredit", "loan"),
+})
+
+RENAME.update({
+    "技木": "技术",      # 木 for 术
+    "竟争": "竞争",      # 竟 for 竞
+    "窗戸": "窗户",      # 戸 is the Japanese form of 户
+    "朴愫": "朴素",      # 愫 for 素
+    "寮": "撩",          # 撩 liāo "to tease"; 寮 is a hut
+})
+
+GLOSSES.update({
+    "技术": ("teknologi, keterampilan teknis", "technology, technique"),
+    "竞争": ("bersaing, persaingan", "to compete, competition"),
+    "窗户": ("jendela", "window"),
+    "朴素": ("sederhana, bersahaja", "plain, simple"),
+    "撩": ("menggoda", "to tease, to flirt with"),
+})
+
+PINYIN.update({
+    "技术": "jì shù",
+    "竞争": "jìng zhēng",
+    "窗户": "chuāng hu",
+    "朴素": "pǔ sù",
+    "撩": "liāo",
+    "气场": "qì chǎng",
+    "机场": "jī chǎng",
+})
+
+DROP.update({
+    "彳": "a radical noted for reference (shuangrenpang), not a word",
+    "穴": "captured with unreadable text beside it",
+    "章印": "unclear which word was meant; 印章 and 盖章 are both plausible",
+})
