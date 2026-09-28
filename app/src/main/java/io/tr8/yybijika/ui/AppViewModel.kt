@@ -3,6 +3,7 @@ package io.tr8.yybijika.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.tr8.yybijika.BuildConfig
 import io.tr8.yybijika.audio.Speaker
 import io.tr8.yybijika.data.DeckStats
 import io.tr8.yybijika.data.Mastery
@@ -13,6 +14,8 @@ import io.tr8.yybijika.learn.Scheduler
 import io.tr8.yybijika.learn.SessionItem
 import io.tr8.yybijika.learn.Skill
 import io.tr8.yybijika.learn.Xp
+import io.tr8.yybijika.update.UpdateChecker
+import io.tr8.yybijika.update.Updater
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,12 +66,73 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _detail = MutableStateFlow<Pair<WordBundle, Map<Skill, Mastery>>?>(null)
     val detail: StateFlow<Pair<WordBundle, Map<Skill, Mastery>>?> = _detail.asStateFlow()
 
+    private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val update: StateFlow<UpdateState> = _update.asStateFlow()
+
     init {
         speaker.whenReady { available ->
             repo.setTtsAvailable(available)
             _home.update { it.copy(ttsAvailable = available) }
         }
         refresh()
+        checkForUpdate()
+    }
+
+    /**
+     * Ask GitHub whether there is a newer build, once per launch.
+     *
+     * Silent on every failure — no network, rate limited, no releases yet. An
+     * update check is not something the learner asked for, so it must never
+     * interrupt them to report that it could not happen.
+     */
+    fun checkForUpdate() = viewModelScope.launch {
+        val release = UpdateChecker.latest() ?: return@launch
+        if (UpdateChecker.isNewer(release.versionName, BuildConfig.VERSION_NAME)) {
+            _update.value = UpdateState.Available(release)
+        }
+    }
+
+    fun downloadUpdate() = viewModelScope.launch {
+        val release = when (val state = _update.value) {
+            is UpdateState.Available -> state.release
+            is UpdateState.Failed -> state.release
+            is UpdateState.NeedsPermission -> state.release
+            else -> return@launch
+        }
+
+        _update.value = UpdateState.Downloading(release, 0)
+        val apk = Updater.download(getApplication(), release) { percent ->
+            _update.value = UpdateState.Downloading(release, percent)
+        }
+
+        _update.value = when {
+            apk == null -> UpdateState.Failed(release, "Download failed")
+            !Updater.canInstall(getApplication()) -> UpdateState.NeedsPermission(release)
+            else -> UpdateState.Ready(release, apk)
+        }
+    }
+
+    fun installUpdate() {
+        val state = _update.value
+        if (state is UpdateState.Ready) {
+            Updater.install(getApplication(), state.apk)
+        }
+    }
+
+    fun grantInstallPermission() {
+        Updater.requestInstallPermission(getApplication())
+    }
+
+    /** Called when returning to the app, in case the permission was just granted. */
+    fun recheckInstallPermission() {
+        val state = _update.value
+        if (state is UpdateState.NeedsPermission && Updater.canInstall(getApplication())) {
+            downloadUpdate()
+        }
+    }
+
+    fun dismissUpdate() {
+        _update.value = UpdateState.Idle
     }
 
     fun refresh() = viewModelScope.launch {

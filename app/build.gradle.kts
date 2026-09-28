@@ -37,6 +37,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Where the in-app updater looks for new releases.
+        buildConfigField("String", "UPDATE_REPO", "\"AnastasiaYap/yybijika\"")
     }
 
     buildTypes {
@@ -90,4 +93,7 @@ dependencies {
 
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
+    // Android stubs org.json in unit tests, so every call throws "not mocked".
+    // The real implementation makes the release-parsing tests runnable on the JVM.
+    testImplementation(libs.json)
 }

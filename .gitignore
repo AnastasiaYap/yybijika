@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 pipeline/.env
 content/staging.db
+.venv/
+dist/
+

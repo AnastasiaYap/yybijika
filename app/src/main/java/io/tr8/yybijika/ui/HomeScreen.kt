@@ -30,8 +30,13 @@ import io.tr8.yybijika.ui.theme.HanziMedium
 @Composable
 fun HomeScreen(
     state: HomeState,
+    update: UpdateState,
     onStudy: () -> Unit,
     onBrowse: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
+    onGrantInstallPermission: () -> Unit,
+    onDismissUpdate: () -> Unit,
 ) {
     if (state.loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -55,6 +60,14 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        UpdateCard(
+            state = update,
+            onDownload = onDownloadUpdate,
+            onInstall = onInstallUpdate,
+            onGrantPermission = onGrantInstallPermission,
+            onDismiss = onDismissUpdate,
+        )
 
         LevelCard(state.totalXp, state.streak)
 
@@ -85,6 +98,12 @@ fun HomeScreen(
         }
 
         state.stats?.let { DeckCard(it) }
+
+        Text(
+            "v${io.tr8.yybijika.BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         if (!state.ttsAvailable) {
             Card(Modifier.fillMaxWidth()) {

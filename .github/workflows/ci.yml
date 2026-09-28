@@ -1,0 +1,65 @@
+name: CI
+
+# The app updates itself from this repo's releases, so a broken build does not
+# stay on the shelf — it reaches the phone at the next launch. Everything below
+# runs on every push so a release is never cut from an untested tree.
+#
+# Release APKs are built and signed locally, not here: the signing key stays on
+# one machine rather than living in GitHub secrets.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Assemble debug
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            app/build/reports/
+            app/build/test-results/
+
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+          pip install -q -r requirements.txt
+
+      # The deck ships inside the APK, so a pipeline regression is a content
+      # regression. Rebuilding from the cached note text catches it here.
+      - name: Rebuild the deck
+        run: python pipeline/build.py
+
+      - name: Coverage report
+        run: python pipeline/report.py

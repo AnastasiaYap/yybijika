@@ -53,6 +53,20 @@ private fun App(vm: AppViewModel = viewModel()) {
     val session by vm.session.collectAsState()
     val browse by vm.browse.collectAsState()
     val detail by vm.detail.collectAsState()
+    val update by vm.update.collectAsState()
+
+    // Granting install permission sends the user to system settings, so the
+    // only way to learn they came back with it is to look again on resume.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                vm.recheckInstallPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     fun back() {
         when (screen) {
@@ -93,8 +107,13 @@ private fun App(vm: AppViewModel = viewModel()) {
             Screen.HOME -> androidx.compose.foundation.layout.Box(content) {
                 HomeScreen(
                     state = home,
+                    update = update,
                     onStudy = { vm.startSession(); screen = Screen.SESSION },
                     onBrowse = { screen = Screen.BROWSE },
+                    onDownloadUpdate = vm::downloadUpdate,
+                    onInstallUpdate = vm::installUpdate,
+                    onGrantInstallPermission = vm::grantInstallPermission,
+                    onDismissUpdate = vm::dismissUpdate,
                 )
             }
 
