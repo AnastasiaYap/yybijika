@@ -33,6 +33,7 @@ fun HomeScreen(
     update: UpdateState,
     onStudy: () -> Unit,
     onBrowse: () -> Unit,
+    onSettings: () -> Unit,
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: () -> Unit,
     onGrantInstallPermission: () -> Unit,
@@ -121,7 +122,10 @@ fun HomeScreen(
         }
 
         OutlinedButton(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
-            Text("Browse the deck")
+            Text("Search the deck")
+        }
+        OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) {
+            Text("Settings")
         }
     }
 }

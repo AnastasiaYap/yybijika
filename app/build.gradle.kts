@@ -34,8 +34,8 @@ android {
         applicationId = "io.tr8.yybijika"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Where the in-app updater looks for new releases.
@@ -96,4 +96,5 @@ dependencies {
     // Android stubs org.json in unit tests, so every call throws "not mocked".
     // The real implementation makes the release-parsing tests runnable on the JVM.
     testImplementation(libs.json)
+    testImplementation(libs.coroutines.test)
 }

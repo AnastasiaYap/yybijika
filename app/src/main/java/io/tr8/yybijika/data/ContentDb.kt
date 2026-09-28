@@ -199,6 +199,85 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         return bundles(ids)
     }
 
+    fun passages(): List<Passage> {
+        val questions = mutableMapOf<Long, MutableList<PassageQuestion>>()
+        db.rawQuery(
+            "SELECT passage_id, q, choices_json, answer, explain FROM passage_question " +
+                "ORDER BY passage_id, id", null
+        ).use { c ->
+            while (c.moveToNext()) {
+                val raw = org.json.JSONArray(c.getString(2))
+                questions.getOrPut(c.getLong(0)) { mutableListOf() }.add(
+                    PassageQuestion(
+                        q = c.getString(1),
+                        choices = (0 until raw.length()).map { raw.getString(it) },
+                        answer = c.getInt(3),
+                        explain = c.getString(4),
+                    )
+                )
+            }
+        }
+
+        val lines = mutableMapOf<Long, MutableList<Pair<String, String>>>()
+        db.rawQuery(
+            "SELECT passage_id, zh, pinyin FROM passage_token ORDER BY passage_id, idx", null
+        ).use { c ->
+            while (c.moveToNext()) {
+                lines.getOrPut(c.getLong(0)) { mutableListOf() }
+                    .add(c.getString(1) to c.getString(2).orEmpty())
+            }
+        }
+
+        return db.rawQuery(
+            "SELECT id, title, level, translation FROM passage ORDER BY level, id", null
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    val id = c.getLong(0)
+                    // The translation is stored as one · separated string, aligned
+                    // line for line with the passage, exactly as the notes gloss.
+                    val parts = c.getString(3).orEmpty().split(" · ")
+                    val glosses = parts.drop(1)
+                    val zh = lines[id].orEmpty()
+                    add(
+                        Passage(
+                            id = id,
+                            title = c.getString(1),
+                            titleId = parts.firstOrNull().orEmpty(),
+                            level = c.getInt(2),
+                            lines = zh.mapIndexed { i, (text, py) ->
+                                PassageLine(text, py, glosses.getOrElse(i) { "" })
+                            },
+                            questions = questions[id].orEmpty(),
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun grammarPatterns(): List<GrammarPattern> {
+        val examples = mutableMapOf<Long, MutableList<Pair<String, String?>>>()
+        db.rawQuery(
+            "SELECT pattern_id, zh, pinyin FROM pattern_example ORDER BY pattern_id, id", null
+        ).use { c ->
+            while (c.moveToNext()) {
+                examples.getOrPut(c.getLong(0)) { mutableListOf() }
+                    .add(c.getString(1) to c.getString(2))
+            }
+        }
+        return db.rawQuery(
+            "SELECT id, formula, note FROM pattern ORDER BY source_page, source_line", null
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    val id = c.getLong(0)
+                    add(GrammarPattern(id, c.getString(1), c.getString(2), examples[id].orEmpty()))
+                }
+            }
+        }
+    }
+
     fun deckStats(): DeckStats = db.rawQuery(
         """SELECT
              (SELECT COUNT(*) FROM word),
@@ -220,4 +299,31 @@ data class DeckStats(
     val withGloss: Int,
     val pinyinVerified: Int,
     val withExample: Int,
+)
+
+/** A reading passage with its lines and questions. */
+data class Passage(
+    val id: Long,
+    val title: String,
+    val titleId: String,
+    val level: Int,
+    val lines: List<PassageLine>,
+    val questions: List<PassageQuestion>,
+)
+
+data class PassageLine(val zh: String, val pinyin: String, val gloss: String)
+
+data class PassageQuestion(
+    val q: String,
+    val choices: List<String>,
+    val answer: Int,
+    val explain: String?,
+)
+
+/** A grammar pattern as the notes recorded it, with whatever examples sat under it. */
+data class GrammarPattern(
+    val id: Long,
+    val formula: String,
+    val note: String?,
+    val examples: List<Pair<String, String?>>,
 )

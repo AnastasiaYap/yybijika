@@ -10,6 +10,7 @@ PDF plus whatever enrichment has been reviewed and accepted.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sqlite3
 import sys
@@ -17,6 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import curate  # noqa: E402
+import essays  # noqa: E402
 import lex  # noqa: E402
 import notes  # noqa: E402
 import tags  # noqa: E402
@@ -103,11 +106,28 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
     conn.executescript(SCHEMA.read_text(encoding="utf-8"))
 
     doc = lex.parse_document(notes.source_lines(refresh=refresh))
-    merged = merge_entries(doc.entries)
+
+    # The notes are what was written; curation is what was meant. Applying it
+    # before merging means a renamed headword folds into the real word's entry
+    # instead of sitting beside it as a near-duplicate.
+    problems = curate.check()
+    if problems:
+        raise SystemExit(
+            "curation.py contradicts itself:\n  " + "\n  ".join(problems)
+        )
+    entries, report = curate.apply(doc.entries)
+    print(f"  {report}")
+
+    merged = merge_entries(entries)
 
     word_ids: dict[str, int] = {}
     for hanzi, entry in merged.items():
-        reading = zh.read(hanzi)
+        # A hand-corrected reading overrides the generated one and is trusted:
+        # someone read it in context, which is exactly what the generator cannot do.
+        corrected = curate.corrected_pinyin(hanzi)
+        reading = (
+            zh.Reading(corrected, True, "curated") if corrected else zh.read(hanzi)
+        )
         trad = zh.to_traditional(hanzi)
         cur = conn.execute(
             """INSERT INTO word (hanzi, hanzi_trad, pinyin, pinyin_verified,
@@ -192,6 +212,36 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
                 (pid, simp, zh.read(simp).pinyin),
             )
 
+    # Reading passages, written around words that are already in the deck.
+    for essay in essays.ESSAYS:
+        body = "".join(line for line, _ in essay["lines"])
+        translation = " · ".join(
+            [essay["title_id"]] + [gloss for _, gloss in essay["lines"]]
+        )
+        cur = conn.execute(
+            """INSERT INTO passage (title, level, body, translation, source)
+               VALUES (?,?,?,?, 'written')""",
+            (essay["title"], essay["level"], body, translation),
+        )
+        pid = cur.lastrowid
+
+        # One token per line rather than per word: the reader shows a line at a
+        # time with its translation beneath, which is how the notes gloss too.
+        for idx, (zh_line, gloss) in enumerate(essay["lines"]):
+            conn.execute(
+                """INSERT INTO passage_token (passage_id, idx, zh, pinyin, word_id)
+                   VALUES (?,?,?,?,NULL)""",
+                (pid, idx, zh_line, zh.read_sentence(zh_line)),
+            )
+
+        for q in essay["questions"]:
+            conn.execute(
+                """INSERT INTO passage_question
+                   (passage_id, q, choices_json, answer, explain) VALUES (?,?,?,?,?)""",
+                (pid, q["q"], json.dumps(q["choices"], ensure_ascii=False),
+                 q["answer"], q.get("explain")),
+            )
+
     for orphan in doc.orphans:
         conn.execute(
             "INSERT INTO orphan (page, line, text, reason) VALUES (?,?,?,?)",
@@ -213,7 +263,8 @@ def main() -> int:
     counts = {
         t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         for t in ("word", "sense", "usage_note", "relation", "example",
-                  "pattern", "pattern_example", "tag", "orphan")
+                  "pattern", "pattern_example", "tag", "passage",
+                  "passage_question", "orphan")
     }
     print(f"built {args.out.relative_to(REPO)}")
     for name, n in counts.items():

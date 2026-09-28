@@ -7,7 +7,13 @@ import io.tr8.yybijika.BuildConfig
 import io.tr8.yybijika.audio.Speaker
 import io.tr8.yybijika.data.DeckStats
 import io.tr8.yybijika.data.Mastery
+import io.tr8.yybijika.data.GrammarPattern
+import io.tr8.yybijika.data.Passage
 import io.tr8.yybijika.data.Repo
+import io.tr8.yybijika.data.Settings
+import io.tr8.yybijika.data.UserWord
+import io.tr8.yybijika.notes.DeepSeek
+import io.tr8.yybijika.notes.NoteParser
 import io.tr8.yybijika.exercise.WordBundle
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
@@ -52,6 +58,7 @@ data class SessionState(
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = Repo.get(app)
+    private val settings = Settings(app)
     val speaker = Speaker(app)
 
     private val _home = MutableStateFlow(HomeState())
@@ -69,13 +76,195 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val update: StateFlow<UpdateState> = _update.asStateFlow()
 
+    private val _cards = MutableStateFlow<List<WordBundle>>(emptyList())
+    val cards: StateFlow<List<WordBundle>> = _cards.asStateFlow()
+
+    private val _passages = MutableStateFlow<List<Passage>>(emptyList())
+    val passages: StateFlow<List<Passage>> = _passages.asStateFlow()
+
+    private val _patterns = MutableStateFlow<List<GrammarPattern>>(emptyList())
+    val patterns: StateFlow<List<GrammarPattern>> = _patterns.asStateFlow()
+
+    private val _settingsState = MutableStateFlow(SettingsState())
+    val settingsState: StateFlow<SettingsState> = _settingsState.asStateFlow()
+
+    private val _addText = MutableStateFlow("")
+    val addText: StateFlow<String> = _addText.asStateFlow()
+
+    private val _addState = MutableStateFlow<AddState>(AddState.Editing)
+    val addState: StateFlow<AddState> = _addState.asStateFlow()
+
     init {
         speaker.whenReady { available ->
             repo.setTtsAvailable(available)
             _home.update { it.copy(ttsAvailable = available) }
         }
         refresh()
-        checkForUpdate()
+        loadLibrary()
+        if (settings.autoCheckUpdates) checkForUpdate()
+    }
+
+    private fun loadLibrary() = viewModelScope.launch {
+        _cards.value = repo.allWords()
+        _passages.value = repo.passages()
+        _patterns.value = repo.grammarPatterns()
+        refreshSettings()
+    }
+
+    private suspend fun refreshSettings() {
+        _settingsState.value = _settingsState.value.copy(
+            maskedKey = settings.maskedKey(),
+            hasKey = settings.hasDeepseekKey,
+            sessionSize = settings.sessionSize,
+            newPerSession = settings.newPerSession,
+            autoCheckUpdates = settings.autoCheckUpdates,
+            userWordCount = repo.userWordCount(),
+            deckWords = repo.deckStats().words,
+        )
+    }
+
+    // ---- settings --------------------------------------------------------
+
+    fun saveKey(key: String) = viewModelScope.launch {
+        settings.deepseekKey = key
+        refreshSettings()
+    }
+
+    fun clearKey() = viewModelScope.launch {
+        settings.deepseekKey = ""
+        refreshSettings()
+    }
+
+    fun setSessionSize(n: Int) = viewModelScope.launch {
+        settings.sessionSize = n
+        refreshSettings()
+    }
+
+    fun setNewPerSession(n: Int) = viewModelScope.launch {
+        settings.newPerSession = n
+        refreshSettings()
+    }
+
+    fun setAutoCheck(on: Boolean) = viewModelScope.launch {
+        settings.autoCheckUpdates = on
+        refreshSettings()
+    }
+
+    /** The manual check, which unlike the launch check reports when it finds nothing. */
+    fun checkNow() = viewModelScope.launch {
+        _settingsState.value = _settingsState.value.copy(checking = true, checkResult = null)
+        val release = UpdateChecker.latest()
+        val message = when {
+            release == null -> "Could not reach GitHub"
+            UpdateChecker.isNewer(release.versionName, BuildConfig.VERSION_NAME) -> {
+                _update.value = UpdateState.Available(release)
+                "Version ${release.versionName} found"
+            }
+            else -> "You are on the latest version"
+        }
+        _settingsState.value = _settingsState.value.copy(checking = false, checkResult = message)
+    }
+
+    // ---- adding notes ----------------------------------------------------
+
+    fun setAddText(text: String) { _addText.value = text }
+
+    fun resetAdd() {
+        _addText.value = ""
+        _addState.value = AddState.Editing
+    }
+
+    fun parseNotes() = viewModelScope.launch {
+        _addState.value = AddState.Parsing
+        val drafts = NoteParser.parse(_addText.value)
+        _addState.value =
+            if (drafts.isEmpty()) AddState.Failed("No Chinese words found in that text.", emptyList())
+            else AddState.Parsed(drafts)
+    }
+
+    /**
+     * Ask DeepSeek for what the paste left out.
+     *
+     * Only the incomplete drafts are sent, and only the fields they are missing
+     * are requested — a word you glossed yourself keeps your wording.
+     */
+    fun fillBlanks() = viewModelScope.launch {
+        val drafts = (_addState.value as? AddState.Parsed)?.drafts ?: return@launch
+        val key = settings.deepseekKey
+        if (key.isBlank()) {
+            _addState.value = AddState.Failed("No DeepSeek key saved.", drafts)
+            return@launch
+        }
+
+        val incomplete = drafts.filter { it.missing.isNotEmpty() }
+        _addState.value = AddState.Filling(0, incomplete.size)
+
+        val filled = try {
+            DeepSeek(key).fill(incomplete)
+        } catch (e: DeepSeek.Failure) {
+            _addState.value = AddState.Failed(e.message ?: "DeepSeek failed", drafts)
+            return@launch
+        }
+
+        val byHanzi = filled.associateBy { it.hanzi }
+        _addState.value = AddState.Ready(drafts.map { it.toPending(byHanzi[it.hanzi]) })
+    }
+
+    /** Save without asking DeepSeek — whatever was written is what gets stored. */
+    fun saveParsedAsIs() = viewModelScope.launch {
+        val drafts = (_addState.value as? AddState.Parsed)?.drafts ?: return@launch
+        _addState.value = AddState.Ready(drafts.map { it.toPending(null) })
+    }
+
+    private suspend fun NoteParser.Draft.toPending(filled: DeepSeek.Filled?) = PendingCard(
+        hanzi = hanzi,
+        pinyin = filled?.pinyin ?: pinyin ?: "",
+        glossId = filled?.glossId ?: glosses.firstOrNull(),
+        glossEn = filled?.glossEn ?: glosses.getOrNull(1),
+        exampleZh = filled?.exampleZh ?: examples.firstOrNull(),
+        examplePinyin = filled?.examplePinyin,
+        exampleGloss = filled?.exampleGloss,
+        notes = usageNotes.firstOrNull(),
+        filledByModel = filled != null && missing.isNotEmpty(),
+        duplicate = repo.hasWord(hanzi),
+        warnings = filled?.rejected.orEmpty(),
+    )
+
+    fun toggleCard(index: Int) {
+        val ready = _addState.value as? AddState.Ready ?: return
+        _addState.value = AddState.Ready(
+            ready.cards.mapIndexed { i, c -> if (i == index) c.copy(include = !c.include) else c }
+        )
+    }
+
+    fun saveCards() = viewModelScope.launch {
+        val cards = when (val state = _addState.value) {
+            is AddState.Ready -> state.cards.filter { it.include }
+            is AddState.Parsed -> state.drafts.map { it.toPending(null) }
+            else -> return@launch
+        }
+        cards.forEach { card ->
+            repo.addUserWord(
+                UserWord(
+                    hanzi = card.hanzi,
+                    pinyin = card.pinyin,
+                    // A reading nobody checked stays untrusted, wherever it came
+                    // from, so it cannot reach the listening or typing drills.
+                    pinyinVerified = false,
+                    glossId = card.glossId,
+                    glossEn = card.glossEn,
+                    exampleZh = card.exampleZh,
+                    examplePinyin = card.examplePinyin,
+                    exampleGloss = card.exampleGloss,
+                    notes = card.notes,
+                    source = if (card.filledByModel) "deepseek" else "notes",
+                )
+            )
+        }
+        _addState.value = AddState.Saved(cards.size)
+        _addText.value = ""
+        loadLibrary()
+        refresh()
     }
 
     /**
@@ -154,7 +343,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun startSession(size: Int = 20) = viewModelScope.launch {
+    fun startSession(size: Int = settings.sessionSize) = viewModelScope.launch {
         _session.value = SessionState()
         val items = repo.buildSession(size)
         _session.value = SessionState(items = items, finished = items.isEmpty())

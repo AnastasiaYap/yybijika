@@ -10,6 +10,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.Upsert
 import io.tr8.yybijika.learn.Skill
 
@@ -43,6 +45,33 @@ data class XpEvent(
     val skill: String,
     val xp: Int,
     val combo: Int,
+)
+
+/**
+ * A word you added yourself, by pasting notes into the app.
+ *
+ * Lives here rather than in content.db for the same reason mastery does: the
+ * deck file is replaced wholesale by every update, and words you added after
+ * the last release would vanish with it.
+ *
+ * Ids are negative so they can never collide with a content.db id, which means
+ * mastery, XP and every exercise treat a pasted word exactly like a shipped one.
+ */
+@Entity(tableName = "user_word")
+data class UserWord(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val hanzi: String,
+    val pinyin: String,
+    @ColumnInfo(name = "pinyin_verified") val pinyinVerified: Boolean = false,
+    @ColumnInfo(name = "gloss_id") val glossId: String?,
+    @ColumnInfo(name = "gloss_en") val glossEn: String?,
+    @ColumnInfo(name = "example_zh") val exampleZh: String? = null,
+    @ColumnInfo(name = "example_pinyin") val examplePinyin: String? = null,
+    @ColumnInfo(name = "example_gloss") val exampleGloss: String? = null,
+    val notes: String? = null,
+    @ColumnInfo(name = "added_at") val addedAt: Long = System.currentTimeMillis(),
+    /** Where the content came from: "notes" for what you typed, "deepseek" for filled blanks. */
+    val source: String = "notes",
 )
 
 @Entity(tableName = "daily")
@@ -106,13 +135,28 @@ interface ProgressDao {
 
     @Query("SELECT * FROM daily ORDER BY date DESC LIMIT :limit")
     suspend fun recentDays(limit: Int): List<Daily>
+
+    @Query("SELECT * FROM user_word ORDER BY added_at DESC")
+    suspend fun userWords(): List<UserWord>
+
+    @Query("SELECT COUNT(*) FROM user_word")
+    suspend fun userWordCount(): Int
+
+    @Query("SELECT * FROM user_word WHERE hanzi = :hanzi LIMIT 1")
+    suspend fun userWord(hanzi: String): UserWord?
+
+    @Insert
+    suspend fun addUserWord(word: UserWord): Long
+
+    @Query("DELETE FROM user_word WHERE id = :id")
+    suspend fun deleteUserWord(id: Long)
 }
 
 data class SkillCount(val skill: String, val n: Int)
 
 @Database(
-    entities = [Mastery::class, XpEvent::class, Daily::class],
-    version = 1,
+    entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -121,10 +165,38 @@ abstract class ProgressDb : RoomDatabase() {
     companion object {
         @Volatile private var instance: ProgressDb? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS user_word (
+                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                         hanzi TEXT NOT NULL,
+                         pinyin TEXT NOT NULL,
+                         pinyin_verified INTEGER NOT NULL DEFAULT 0,
+                         gloss_id TEXT,
+                         gloss_en TEXT,
+                         example_zh TEXT,
+                         example_pinyin TEXT,
+                         example_gloss TEXT,
+                         notes TEXT,
+                         added_at INTEGER NOT NULL,
+                         source TEXT NOT NULL DEFAULT 'notes'
+                       )"""
+                )
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
-            ).build().also { instance = it }
+            )
+                // Nothing in this database is reconstructible from elsewhere, so
+                // a destructive migration would throw away the user's progress.
+                // Version 2 only adds user_word; Room handles that automatically
+                // once the migration is declared.
+                .addMigrations(MIGRATION_1_2)
+                .build()
+                .also { instance = it }
         }
     }
 }

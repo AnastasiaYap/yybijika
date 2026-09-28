@@ -2,6 +2,7 @@ package io.tr8.yybijika.data
 
 import android.content.Context
 import io.tr8.yybijika.exercise.DeckContext
+import io.tr8.yybijika.exercise.ExampleSentence
 import io.tr8.yybijika.exercise.WordBundle
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
@@ -64,7 +65,62 @@ class Repo(
             content.distractorPool(word.id, word.hanzi.length)
         }
 
-    suspend fun deckStats(): DeckStats = withContext(Dispatchers.IO) { content.deckStats() }
+    /**
+     * A word you pasted in, shaped exactly like one from the shipped deck.
+     *
+     * The negative id is what keeps the two apart without either side needing to
+     * know the other exists: content.db ids count up from 1, so nothing can
+     * collide, and every exercise, schedule and XP row treats them identically.
+     */
+    private fun UserWord.toBundle() = WordBundle(
+        id = -id,
+        hanzi = hanzi,
+        hanziTrad = null,
+        pinyin = pinyin,
+        pinyinVerified = pinyinVerified,
+        isPhrase = hanzi.length >= 5,
+        glosses = listOfNotNull(glossId, glossEn),
+        usageNotes = listOfNotNull(notes),
+        examples = listOfNotNull(
+            exampleZh?.let {
+                ExampleSentence(
+                    zh = it,
+                    pinyin = examplePinyin,
+                    gloss = exampleGloss,
+                    containsTarget = it.contains(hanzi),
+                    tokenCount = it.count { c -> c.code in 0x4E00..0x9FFF },
+                )
+            }
+        ),
+        tags = listOf("added"),
+    )
+
+    suspend fun userWords(): List<WordBundle> = withContext(Dispatchers.IO) {
+        dao.userWords().map { it.toBundle() }
+    }
+
+    suspend fun userWordCount(): Int = withContext(Dispatchers.IO) { dao.userWordCount() }
+
+    suspend fun hasWord(hanzi: String): Boolean = withContext(Dispatchers.IO) {
+        dao.userWord(hanzi) != null || content.search(hanzi, 1).isNotEmpty()
+    }
+
+    suspend fun addUserWord(word: UserWord): Long = withContext(Dispatchers.IO) {
+        dao.addUserWord(word)
+    }
+
+    suspend fun deleteUserWord(id: Long) = withContext(Dispatchers.IO) { dao.deleteUserWord(id) }
+
+    suspend fun deckStats(): DeckStats = withContext(Dispatchers.IO) {
+        val base = content.deckStats()
+        val added = dao.userWords()
+        base.copy(
+            words = base.words + added.size,
+            withGloss = base.withGloss + added.count { it.glossId != null || it.glossEn != null },
+            pinyinVerified = base.pinyinVerified + added.count { it.pinyinVerified },
+            withExample = base.withExample + added.count { it.exampleZh != null },
+        )
+    }
 
     suspend fun dueCount(): Int = withContext(Dispatchers.IO) { dao.dueCount(today()) }
 
@@ -100,12 +156,18 @@ class Repo(
             SessionBuilder.Due(it.wordId, skillFromKey(it.skill), it.box, it.dueAt)
         }
 
+        val added = dao.userWords().map { it.toBundle() }
+        val addedById = added.associateBy { it.id }
+
         val seen = dao.seenWordIds().toSet()
-        val unseen = content.allWordIds().filter { it !in seen }.shuffled()
+        val unseen = (content.allWordIds() + added.map { it.id })
+            .filter { it !in seen }
+            .shuffled()
 
         val needed = (due.map { it.wordId } + unseen.take(SessionBuilder.MAX_NEW_PER_SESSION * 3))
             .distinct()
-        val bundles = content.bundles(needed).associateBy { it.id }
+        val bundles = (content.bundles(needed.filter { it > 0 }) +
+            needed.mapNotNull { addedById[it] }).associateBy { it.id }
 
         SessionBuilder.build(size, due, unseen, bundles, deckContext, Random.Default)
     }
@@ -171,7 +233,15 @@ class Repo(
         points
     }
 
-    suspend fun word(id: Long): WordBundle? = withContext(Dispatchers.IO) { content.bundle(id) }
+    suspend fun passages(): List<Passage> = withContext(Dispatchers.IO) { content.passages() }
+
+    suspend fun grammarPatterns(): List<GrammarPattern> =
+        withContext(Dispatchers.IO) { content.grammarPatterns() }
+
+    suspend fun word(id: Long): WordBundle? = withContext(Dispatchers.IO) {
+        if (id < 0) dao.userWords().firstOrNull { -it.id == id }?.toBundle()
+        else content.bundle(id)
+    }
 
     suspend fun masteryFor(wordId: Long): Map<Skill, Mastery> =
         withContext(Dispatchers.IO) {
@@ -179,12 +249,21 @@ class Repo(
         }
 
     suspend fun search(query: String): List<WordBundle> = withContext(Dispatchers.IO) {
-        val ids = if (query.isBlank()) {
-            content.allWordIds().take(100)
-        } else {
-            content.search(query)
+        val added = dao.userWords().map { it.toBundle() }.filter {
+            query.isBlank() || it.hanzi.contains(query, true) ||
+                it.pinyin.contains(query, true) ||
+                it.glosses.any { g -> g.contains(query, true) }
         }
-        content.bundles(ids).sortedBy { it.hanzi.length }
+        val ids = if (query.isBlank()) content.allWordIds().take(200) else content.search(query, 200)
+        // Words you added come first: they are the ones you are actively adding
+        // and the ones you are most likely looking for.
+        added + content.bundles(ids).sortedBy { it.hanzi.length }
+    }
+
+    /** Every word in the deck, for the swipeable flashcard browser. */
+    suspend fun allWords(limit: Int = 2000): List<WordBundle> = withContext(Dispatchers.IO) {
+        dao.userWords().map { it.toBundle() } +
+            content.bundles(content.allWordIds().take(limit))
     }
 
     companion object {

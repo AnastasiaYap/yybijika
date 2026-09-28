@@ -89,6 +89,24 @@ def read(hanzi: str) -> Reading:
     return Reading(text, True, "single-reading")
 
 
+def read_sentence(text: str) -> str:
+    """Pinyin for a whole line, with the punctuation left out.
+
+    pypinyin passes punctuation through untouched, which puts a bare 。 in the
+    middle of the romanisation where a reader expects only syllables. The Chinese
+    line above it already shows the punctuation.
+    """
+    simp = to_simplified(text)
+    syllables = [
+        x[0] for x in pinyin(simp, style=Style.TONE)
+        if RE_HAN.search(x[0]) or x[0].strip(PUNCTUATION)
+    ]
+    return " ".join(s for s in (t.strip(PUNCTUATION) for t in syllables) if s)
+
+
+PUNCTUATION = "。，、；：？！“”‘’（）《》〈〉…—·.,;:?!\"'()[]"
+
+
 def syllable_count_matches(hanzi: str, py: str) -> bool:
     """A reading must have exactly one syllable per Chinese character.
 
