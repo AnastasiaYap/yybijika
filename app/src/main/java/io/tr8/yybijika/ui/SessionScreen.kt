@@ -1,0 +1,448 @@
+package io.tr8.yybijika.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import io.tr8.yybijika.exercise.Exercise
+import io.tr8.yybijika.learn.Grade
+import io.tr8.yybijika.learn.SessionItem
+import io.tr8.yybijika.ui.theme.HanziHero
+import io.tr8.yybijika.ui.theme.HanziInline
+import io.tr8.yybijika.ui.theme.HanziMedium
+import io.tr8.yybijika.ui.theme.PinyinStyle
+
+@Composable
+fun SessionScreen(
+    state: SessionState,
+    previews: Map<Grade, Int>,
+    onReveal: () -> Unit,
+    onChoose: (Int) -> Unit,
+    onType: (String) -> Unit,
+    onTapTile: (Int) -> Unit,
+    onUndoTile: () -> Unit,
+    onGrade: (Grade) -> Unit,
+    onSpeak: (String) -> Unit,
+    onDone: () -> Unit,
+) {
+    if (state.finished) {
+        SessionDone(state, onDone)
+        return
+    }
+    val item = state.current
+    if (item == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        LinearProgressIndicator(
+            progress = { state.progress },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "${item.skill.labelZh} · ${item.skill.label}" +
+                    if (item.isNew) " · new" else "",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "${state.index + 1}/${state.total}" +
+                    if (state.combo >= 3) "  ×${state.combo}" else "",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            when (val ex = item.exercise) {
+                is Exercise.Flashcard -> FlashcardBody(ex, state, onReveal)
+                is Exercise.MultipleChoice -> ChoiceBody(ex, state, onChoose, onSpeak)
+                is Exercise.Cloze -> ClozeBody(ex, state, onChoose)
+                is Exercise.Typing -> TypingBody(ex, state, onType)
+                is Exercise.TileBuilder -> BuilderBody(ex, state, onTapTile, onUndoTile)
+            }
+        }
+
+        GradeBar(state, item, previews, onReveal, onGrade)
+    }
+}
+
+// --------------------------------------------------------------------------
+
+@Composable
+private fun FlashcardBody(ex: Exercise.Flashcard, state: SessionState, onReveal: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !state.revealed) { onReveal() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(ex.front, style = HanziHero, textAlign = TextAlign.Center)
+        if (state.revealed) {
+            Text(ex.word.pinyin, style = PinyinStyle,
+                color = MaterialTheme.colorScheme.primary)
+            Text(ex.back, style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center)
+            ex.word.usageNotes.forEach {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center)
+            }
+        } else {
+            Text("Tap to reveal", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ChoiceBody(
+    ex: Exercise.MultipleChoice,
+    state: SessionState,
+    onChoose: (Int) -> Unit,
+    onSpeak: (String) -> Unit,
+) {
+    // A listening question plays itself on arrival, so the first tap is an
+    // answer rather than a play button.
+    LaunchedEffect(ex.prompt) {
+        if (ex.speakPrompt) onSpeak(ex.prompt)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Column(
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (ex.speakPrompt) {
+                if (state.revealed) {
+                    Text(ex.prompt, style = HanziMedium)
+                    Text(ex.promptPinyin.orEmpty(), style = PinyinStyle,
+                        color = MaterialTheme.colorScheme.primary)
+                } else {
+                    Text("🔊", style = HanziHero)
+                }
+                TextButton(onClick = { onSpeak(ex.prompt) }) { Text("Play again") }
+            } else {
+                Text(ex.prompt, style = HanziMedium, textAlign = TextAlign.Center)
+                if (state.revealed && ex.promptPinyin != null) {
+                    Text(ex.promptPinyin, style = PinyinStyle,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ex.choices.forEachIndexed { i, choice ->
+                ChoiceButton(
+                    text = choice,
+                    state = choiceState(i, ex.answerIndex, state),
+                    enabled = !state.revealed,
+                    onClick = { onChoose(i) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClozeBody(ex: Exercise.Cloze, state: SessionState, onChoose: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(ex.sentenceBefore, style = HanziInline)
+                    Text(
+                        if (state.revealed) ex.answer else "＿＿",
+                        style = HanziInline,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(ex.sentenceAfter, style = HanziInline)
+                }
+                ex.gloss?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ex.choices.forEachIndexed { i, choice ->
+                ChoiceButton(
+                    text = choice,
+                    state = choiceState(i, ex.answerIndex, state),
+                    enabled = !state.revealed,
+                    onClick = { onChoose(i) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TypingBody(ex: Exercise.Typing, state: SessionState, onType: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(ex.prompt, style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center)
+        Text(ex.promptPinyin.orEmpty(), style = PinyinStyle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        OutlinedTextField(
+            value = state.typed,
+            onValueChange = onType,
+            enabled = !state.revealed,
+            singleLine = true,
+            textStyle = HanziMedium,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        )
+
+        if (state.revealed) {
+            val right = state.typed.trim() == ex.answer
+            Text(
+                if (right) "Correct" else "${ex.answer} · ${ex.word.pinyin}",
+                style = HanziMedium,
+                color = if (right) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BuilderBody(
+    ex: Exercise.TileBuilder,
+    state: SessionState,
+    onTap: (Int) -> Unit,
+    onUndo: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(ex.prompt, style = MaterialTheme.typography.titleMedium)
+
+        Card(
+            Modifier
+                .fillMaxWidth()
+                .height(90.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            ),
+        ) {
+            FlowRow(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                state.assembled.forEach { i ->
+                    Text(ex.tiles[i], style = HanziInline)
+                }
+            }
+        }
+
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ex.tiles.forEachIndexed { i, tile ->
+                if (i !in state.assembled) {
+                    OutlinedButton(onClick = { onTap(i) }, enabled = !state.revealed) {
+                        Text(tile, style = HanziInline)
+                    }
+                }
+            }
+        }
+
+        if (state.assembled.isNotEmpty() && !state.revealed) {
+            TextButton(onClick = onUndo) { Text("Undo") }
+        }
+
+        if (state.revealed) {
+            Text(ex.solution.joinToString(""), style = HanziInline,
+                color = MaterialTheme.colorScheme.primary)
+            ex.explanation?.let {
+                Text(it, style = PinyinStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+// --------------------------------------------------------------------------
+
+private enum class ChoiceVisual { IDLE, CORRECT, WRONG, MISSED }
+
+private fun choiceState(index: Int, answer: Int, state: SessionState): ChoiceVisual = when {
+    !state.revealed -> ChoiceVisual.IDLE
+    index == answer && state.chosen == answer -> ChoiceVisual.CORRECT
+    index == answer -> ChoiceVisual.MISSED
+    index == state.chosen -> ChoiceVisual.WRONG
+    else -> ChoiceVisual.IDLE
+}
+
+@Composable
+private fun ChoiceButton(
+    text: String,
+    state: ChoiceVisual,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val background = when (state) {
+        ChoiceVisual.IDLE -> scheme.surfaceVariant
+        ChoiceVisual.CORRECT, ChoiceVisual.MISSED -> scheme.primaryContainer
+        ChoiceVisual.WRONG -> scheme.errorContainer
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(background)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(16.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(text, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            // A missed answer is marked so a wrong choice still shows the right one.
+            if (state == ChoiceVisual.MISSED) Text("←", color = scheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun GradeBar(
+    state: SessionState,
+    item: SessionItem,
+    previews: Map<Grade, Int>,
+    onReveal: () -> Unit,
+    onGrade: (Grade) -> Unit,
+) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item.exercise.explanation?.takeIf { state.revealed }?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        if (!state.revealed) {
+            Button(onClick = onReveal, modifier = Modifier.fillMaxWidth()) {
+                Text("Show answer")
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GradeButton("Again", previews[Grade.AGAIN], Modifier.weight(1f)) {
+                    onGrade(Grade.AGAIN)
+                }
+                GradeButton("Hard", previews[Grade.HARD], Modifier.weight(1f)) {
+                    onGrade(Grade.HARD)
+                }
+                GradeButton("Good", previews[Grade.GOOD], Modifier.weight(1f)) {
+                    onGrade(Grade.GOOD)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GradeButton(
+    label: String,
+    days: Int?,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    FilledTonalButton(onClick = onClick, modifier = modifier) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label)
+            // Showing the interval makes the choice informed rather than a guess
+            // about what the app will do with it.
+            Text(
+                when {
+                    days == null -> ""
+                    days == 0 -> "now"
+                    days == 1 -> "1d"
+                    else -> "${days}d"
+                },
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SessionDone(state: SessionState, onDone: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (state.total == 0) {
+            Text("Nothing to study", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Every card is scheduled for a later day. Come back tomorrow, " +
+                    "or browse the deck to read ahead.",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text("Done", style = MaterialTheme.typography.headlineMedium)
+            Text("${state.correct} of ${state.total} correct",
+                style = MaterialTheme.typography.titleMedium)
+            Text("+${state.earned} points",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary)
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onDone) { Text("Back") }
+    }
+}

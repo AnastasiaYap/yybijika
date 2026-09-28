@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- A stylised note card: a rounded rectangle with a folded corner. -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M34,30h28l12,12v36a4,4 0 0 1 -4,4H34a4,4 0 0 1 -4,-4V34a4,4 0 0 1 4,-4z" />
+    <path android:fillColor="#C8503C"
+        android:pathData="M62,30l12,12h-12z" />
+    <path android:fillColor="#C8503C"
+        android:pathData="M39,54h30v3.5H39zM39,63h30v3.5H39zM39,72h19v3.5H39z" />
+</vector>

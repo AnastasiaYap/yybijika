@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+keystore.properties
+*.jks
+*.p12
+.DS_Store
+__pycache__/
+*.pyc
+pipeline/.env
+content/staging.db
