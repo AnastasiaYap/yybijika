@@ -77,6 +77,43 @@ class ContentDbSqlTest {
     }
 
     /**
+     * The character layer is the point of the character questions, so a deck
+     * that shipped without meanings would leave both types generating nothing
+     * while the Quiz screen still counted them as available.
+     */
+    @Test
+    fun `every recurring character carries a meaning in both languages`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        val unglossed = count(
+            """SELECT hanzi AS word_id FROM character
+               WHERE word_count >= 2
+                 AND (gloss IS NULL OR gloss = '' OR gloss_en IS NULL OR gloss_en = '')"""
+        )
+        assertEquals("a character in two or more words must say what it means",
+            0, unglossed)
+    }
+
+    @Test
+    fun `every word is linked to its own characters in order`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        // A word whose character rows are missing, duplicated or out of order
+        // would build the wrong answer in word_building without failing.
+        val mismatched = count(
+            """SELECT w.id AS word_id FROM word w
+               WHERE w.char_count <> (SELECT COUNT(*) FROM word_character wc
+                                       WHERE wc.word_id = w.id)"""
+        )
+        assertEquals("every character of every word must be linked", 0, mismatched)
+
+        val misordered = count(
+            """SELECT word_id FROM word_character
+               GROUP BY word_id
+               HAVING MIN(position) <> 0 OR MAX(position) <> COUNT(*) - 1"""
+        )
+        assertEquals("positions must run 0..n-1 with no gaps", 0, misordered)
+    }
+
+    /**
      * Word tiles are the whole reason the pipeline runs a segmenter, so a deck
      * shipped without them would quietly turn every tile exercise back into a
      * character jigsaw rather than fail.

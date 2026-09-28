@@ -101,6 +101,25 @@ data class CardState(
     }
 }
 
+/**
+ * The same grooming state, for a character.
+ *
+ * A separate table rather than a shared one keyed by a string, because a word id
+ * and a character are different things and a single column holding either would
+ * be a join waiting to go wrong. The ladder they climb is the same, and lives in
+ * one place: [io.tr8.yybijika.learn.CardDeck.step].
+ */
+@Entity(tableName = "character_state")
+data class CharacterState(
+    @PrimaryKey val hanzi: String,
+    /** learning | struggling | known | retired */
+    val state: String = "learning",
+    val box: Int = 0,
+    @ColumnInfo(name = "due_at") val dueAt: Long = 0,      // epoch day
+    @ColumnInfo(name = "seen_count") val seenCount: Int = 0,
+    @ColumnInfo(name = "touched_at") val touchedAt: Long = 0,
+)
+
 @Entity(tableName = "daily")
 data class Daily(
     @PrimaryKey val date: Long,        // epoch day
@@ -192,6 +211,18 @@ interface ProgressDao {
     @Query("SELECT state, COUNT(*) AS n FROM card_state GROUP BY state")
     suspend fun cardStateCounts(): List<StateCount>
 
+    @Query("SELECT * FROM character_state")
+    suspend fun allCharacterStates(): List<CharacterState>
+
+    @Query("SELECT * FROM character_state WHERE hanzi = :hanzi")
+    suspend fun characterState(hanzi: String): CharacterState?
+
+    @Upsert
+    suspend fun putCharacterState(state: CharacterState)
+
+    @Query("SELECT state, COUNT(*) AS n FROM character_state GROUP BY state")
+    suspend fun characterStateCounts(): List<StateCount>
+
     @Query("SELECT COUNT(*) FROM card_state WHERE state != 'retired' AND due_at <= :today")
     suspend fun cardsDue(today: Long): Int
 }
@@ -202,8 +233,8 @@ data class StateCount(val state: String, val n: Int)
 
 @Database(
     entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class,
-                CardState::class],
-    version = 3,
+                CardState::class, CharacterState::class],
+    version = 4,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -248,6 +279,21 @@ abstract class ProgressDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS character_state (
+                         hanzi TEXT PRIMARY KEY NOT NULL,
+                         state TEXT NOT NULL DEFAULT 'learning',
+                         box INTEGER NOT NULL DEFAULT 0,
+                         due_at INTEGER NOT NULL DEFAULT 0,
+                         seen_count INTEGER NOT NULL DEFAULT 0,
+                         touched_at INTEGER NOT NULL DEFAULT 0
+                       )"""
+                )
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
@@ -256,7 +302,7 @@ abstract class ProgressDb : RoomDatabase() {
                 // a destructive migration would throw away the user's progress.
                 // Version 2 only adds user_word; Room handles that automatically
                 // once the migration is declared.
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
                 .also { instance = it }
         }

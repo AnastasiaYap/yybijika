@@ -172,6 +172,8 @@ private fun describe(id: String): String = when (id) {
     "odd_one_out" -> "Three share a character, one does not"
     "pinyin_to_hanzi" -> "Read the pinyin, write the characters"
     "translate_sentence" -> "Indonesian in, Chinese out, with decoy tiles"
+    "character_meaning" -> "What one character contributes to a word"
+    "word_building" -> "Assemble the word from its characters"
     else -> ""
 }
 

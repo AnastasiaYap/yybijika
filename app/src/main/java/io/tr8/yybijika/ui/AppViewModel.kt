@@ -10,7 +10,9 @@ import io.tr8.yybijika.data.Mastery
 import io.tr8.yybijika.data.GrammarPattern
 import io.tr8.yybijika.data.Passage
 import io.tr8.yybijika.data.CardState
+import io.tr8.yybijika.data.CharacterState
 import io.tr8.yybijika.data.Repo
+import io.tr8.yybijika.data.CharacterCard
 import io.tr8.yybijika.data.Settings
 import io.tr8.yybijika.data.UserWord
 import io.tr8.yybijika.notes.DeepSeek
@@ -47,6 +49,36 @@ data class HomeState(
  * [undo] holds the card's state from before the last swipe, which is the only
  * thing needed to put it back: a mis-swipe must not cost an interval.
  */
+/**
+ * The two decks the Cards screen can be grooming.
+ *
+ * Kept as one screen rather than two because the activity is identical — the
+ * same three gestures, the same ladder, the same filters — and splitting it
+ * would mean maintaining the swipe behaviour twice.
+ */
+enum class DeckKind(val label: String) { WORDS("Words"), CHARACTERS("Characters") }
+
+/**
+ * The character half of the Cards screen.
+ *
+ * A parallel state rather than a generic one: a word is addressed by id and a
+ * character by itself, and a single state holding either would spend its life
+ * being narrowed back down.
+ */
+data class CharacterCardsState(
+    val order: List<CharacterState> = emptyList(),
+    val window: Map<String, CharacterCard> = emptyMap(),
+    val index: Int = 0,
+    val counts: Map<CardFilter, Int> = emptyMap(),
+    val undo: Pair<Int, CharacterState>? = null,
+) {
+    val size: Int get() = order.size
+    val currentState: CharacterState? get() = order.getOrNull(index)
+    val current: Pair<CharacterCard, CharacterState>?
+        get() = currentState?.let { st -> window[st.hanzi]?.let { it to st } }
+    val canUndo: Boolean get() = undo != null
+}
+
 data class CardsState(
     val filter: CardFilter = CardFilter.DUE,
     /** The whole slice as states; the words themselves arrive a window at a time. */
@@ -78,6 +110,20 @@ data class SessionState(
     val current: SessionItem? get() = items.getOrNull(index)
     val total: Int get() = items.size
     val progress: Float get() = if (items.isEmpty()) 0f else index.toFloat() / items.size
+}
+
+/**
+ * Whether the app may make a sound, and whether it could if allowed.
+ *
+ * Both halves are shown because they fail differently. Muted is something the
+ * learner did and can undo from the toggle; no voice installed is something only
+ * the system settings can fix, and a toggle that does nothing would be a lie.
+ */
+data class AudioState(
+    val voiceInstalled: Boolean = false,
+    val enabled: Boolean = true,
+) {
+    val on: Boolean get() = voiceInstalled && enabled
 }
 
 private const val WINDOW = 12
@@ -118,6 +164,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _quiz = MutableStateFlow(QuizSetup())
     val quiz: StateFlow<QuizSetup> = _quiz.asStateFlow()
 
+    private val _audio = MutableStateFlow(AudioState(enabled = settings.audioEnabled))
+    val audio: StateFlow<AudioState> = _audio.asStateFlow()
+
+    private val _deckKind = MutableStateFlow(DeckKind.WORDS)
+    val deckKind: StateFlow<DeckKind> = _deckKind.asStateFlow()
+
+    private val _charCards = MutableStateFlow(CharacterCardsState())
+    val charCards: StateFlow<CharacterCardsState> = _charCards.asStateFlow()
+
+    private val _character =
+        MutableStateFlow<Pair<CharacterCard, List<Triple<Long, String, String?>>>?>(null)
+    val character: StateFlow<Pair<CharacterCard, List<Triple<Long, String, String?>>>?> =
+        _character.asStateFlow()
+
     private val _addText = MutableStateFlow("")
     val addText: StateFlow<String> = _addText.asStateFlow()
 
@@ -125,9 +185,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val addState: StateFlow<AddState> = _addState.asStateFlow()
 
     init {
+        repo.setAudioEnabled(settings.audioEnabled)
         speaker.whenReady { available ->
             repo.setTtsAvailable(available)
             _home.update { it.copy(ttsAvailable = available) }
+            _audio.update { it.copy(voiceInstalled = available) }
             // The voice check finishes after this block has already asked for
             // the quiz counts, and three of the types are only offerable once
             // it comes back. Recount rather than leave listening hidden on a
@@ -249,6 +311,66 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun reviveCard(wordId: Long) = viewModelScope.launch {
         repo.revive(wordId)
         loadCards(_cards.value.filter)
+    }
+
+    // ---- the character deck ----------------------------------------------
+
+    fun setDeckKind(kind: DeckKind) {
+        _deckKind.value = kind
+        if (kind == DeckKind.CHARACTERS && _charCards.value.order.isEmpty()) {
+            loadCharacterCards(_cards.value.filter)
+        }
+    }
+
+    fun loadCharacterCards(filter: CardFilter = _cards.value.filter) =
+        viewModelScope.launch {
+            val order = repo.characterOrder(filter)
+            _charCards.value = CharacterCardsState(
+                order = order,
+                index = 0,
+                counts = repo.characterCounts(),
+                undo = null,
+            )
+            fillCharacterWindow(0)
+        }
+
+    private fun fillCharacterWindow(index: Int) = viewModelScope.launch {
+        val state = _charCards.value
+        val ids = state.order
+            .subList(index.coerceAtMost(state.size), (index + WINDOW).coerceAtMost(state.size))
+            .map { it.hanzi }
+            .filterNot { it in state.window }
+        if (ids.isEmpty()) return@launch
+        val fetched = repo.characterWindow(ids)
+        if (fetched.isEmpty()) return@launch
+        _charCards.value = _charCards.value.copy(window = _charCards.value.window + fetched)
+    }
+
+    fun swipeCharacter(swipe: CardDeck.Swipe) = viewModelScope.launch {
+        val state = _charCards.value
+        val (_, before) = state.current ?: return@launch
+        repo.swipeCharacter(before, swipe)
+        _charCards.value = state.copy(
+            index = state.index + 1,
+            undo = state.index to before,
+            counts = repo.characterCounts(),
+        )
+        if (state.index + 1 >= state.size) loadCharacterCards(_cards.value.filter)
+        else fillCharacterWindow(state.index + 1)
+    }
+
+    fun undoCharacterSwipe() = viewModelScope.launch {
+        val state = _charCards.value
+        val (index, before) = state.undo ?: return@launch
+        repo.restoreCharacterState(before)
+        _charCards.value = state.copy(
+            index = index, undo = null, counts = repo.characterCounts(),
+        )
+    }
+
+    fun reviveCharacter(hanzi: String) = viewModelScope.launch {
+        repo.reviveCharacter(hanzi)
+        loadCharacterCards(_cards.value.filter)
     }
 
     // ---- settings --------------------------------------------------------
@@ -523,7 +645,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return Grade.entries.associateWith { Scheduler.previewDays(state, it) }
     }
 
-    fun speak(text: String) = speaker.speak(text)
+    /**
+     * Say something, unless the learner has muted the app.
+     *
+     * Checked here rather than in [Speaker] so the engine keeps reporting what
+     * the phone can actually do — muting is a preference, and a muted app must
+     * not start claiming there is no Chinese voice installed.
+     */
+    fun speak(text: String) {
+        if (_audio.value.on) speaker.speak(text)
+    }
+
+    /**
+     * Mute or unmute.
+     *
+     * The quiz counts are recomputed because three question types need sound:
+     * muting should take them off the menu rather than leave them there to
+     * produce an empty quiz.
+     */
+    fun setAudioEnabled(enabled: Boolean) {
+        settings.audioEnabled = enabled
+        repo.setAudioEnabled(enabled)
+        _audio.update { it.copy(enabled = enabled) }
+        loadQuizSetup()
+    }
+
+    fun openCharacter(hanzi: String) = viewModelScope.launch {
+        _character.value = repo.character(hanzi)
+    }
+
+    fun closeCharacter() { _character.value = null }
 
     fun search(query: String) = viewModelScope.launch {
         _browse.value = repo.search(query)

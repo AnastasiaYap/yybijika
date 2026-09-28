@@ -1,5 +1,6 @@
 package io.tr8.yybijika
 
+import io.tr8.yybijika.exercise.CharacterPart
 import io.tr8.yybijika.exercise.DeckContext
 import io.tr8.yybijika.exercise.ExampleSentence
 import io.tr8.yybijika.exercise.Registry
@@ -21,6 +22,9 @@ private class FakeContext(
     override fun distractorHanzi(word: WordBundle, count: Int) =
         List(minOf(distractors, count)) { "词$it" }
 
+    override fun distractorCharacterGlosses(exclude: String, count: Int) =
+        List(minOf(distractors, count)) { "meaning$it" }
+
     override fun shuffleSeed(word: WordBundle, typeId: String) = 1L
 
     override val measureWords: List<String> = listOf("条", "张", "本", "件", "位")
@@ -28,6 +32,10 @@ private class FakeContext(
 
 private fun word(
     hanzi: String = "热闹",
+    characters: List<CharacterPart> = listOf(
+        CharacterPart("热", "rè", "panas", "hot", 9),
+        CharacterPart("闹", "nào", "berisik", "noisy", 4),
+    ),
     pinyin: String = "rè nào",
     verified: Boolean = true,
     glosses: List<String> = listOf("ramai"),
@@ -44,6 +52,7 @@ private fun word(
     glosses = glosses,
     examples = examples,
     relations = relations,
+    characters = characters,
 )
 
 /** A word this one is genuinely lost against, for the tell-apart exercise. */
@@ -406,6 +415,67 @@ class RegistryTest {
             as io.tr8.yybijika.exercise.Exercise.Typing
         assertEquals("rè nào", ex.prompt)
         assertEquals("热闹", ex.answer)
+    }
+
+    // ----------------------------------------------------------------------
+    // Characters
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `character meaning names the word the character is standing in`() {
+        val ex = io.tr8.yybijika.exercise.CharacterMeaning.generate(fullWord(), FakeContext())
+            as io.tr8.yybijika.exercise.Exercise.MultipleChoice
+        // 热 is in nine words, 闹 in four, so the question is about 热: it is the
+        // one whose meaning pays off across the rest of the deck.
+        assertTrue("should ask about the commoner character, got '${ex.prompt}'",
+            ex.prompt.contains("热") && ex.prompt.contains("热闹"))
+        assertEquals("panas", ex.choices[ex.answerIndex])
+    }
+
+    /**
+     * A character that appears in one word explains nothing — its "meaning" is
+     * just that word's meaning, so the question would be circular.
+     */
+    @Test
+    fun `a character used in only one word is not taught`() {
+        val lonely = word(
+            characters = listOf(CharacterPart("罕", "hǎn", "jarang", "rare", 1)),
+        )
+        assertNull(io.tr8.yybijika.exercise.CharacterMeaning.generate(lonely, FakeContext()))
+        assertNull(io.tr8.yybijika.exercise.WordBuilding.generate(lonely, FakeContext()))
+    }
+
+    @Test
+    fun `word building offers the characters plus decoys`() {
+        val ex = io.tr8.yybijika.exercise.WordBuilding.generate(fullWord(), FakeContext())
+            as io.tr8.yybijika.exercise.Exercise.TileBuilder
+        assertEquals(listOf("热", "闹"), ex.solution)
+        assertEquals("ramai", ex.prompt)
+        assertTrue("the answer must be reachable", ex.tiles.containsAll(ex.solution))
+        assertTrue("decoys are needed or the word assembles itself",
+            ex.tiles.size > ex.solution.size)
+    }
+
+    /**
+     * Four characters is already a phrase to remember rather than a word to put
+     * together, and one character is not an assembly at all.
+     */
+    @Test
+    fun `word building declines words that are not built from parts`() {
+        val single = word(
+            hanzi = "湖",
+            characters = listOf(CharacterPart("湖", "hú", "danau", "lake", 3)),
+        )
+        assertNull(io.tr8.yybijika.exercise.WordBuilding.generate(single, FakeContext()))
+
+        val phrase = word(
+            hanzi = "农林牧渔水利生产人员",
+            isPhrase = true,
+            characters = "农林牧渔水利生产人员".map {
+                CharacterPart(it.toString(), "x", "sesuatu", "something", 3)
+            },
+        )
+        assertNull(io.tr8.yybijika.exercise.WordBuilding.generate(phrase, FakeContext()))
     }
 
     @Test

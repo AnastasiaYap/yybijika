@@ -28,7 +28,8 @@ import kotlin.random.Random
 class Repo(
     private val content: ContentDb,
     private val progress: ProgressDb,
-    private var ttsReady: Boolean = false,
+    private var voiceInstalled: Boolean = false,
+    private var audioEnabled: Boolean = true,
 ) {
 
     private val dao = progress.dao()
@@ -37,14 +38,28 @@ class Repo(
      *  would mean a random query per card for no gain in variety. */
     private val distractorCache = java.util.concurrent.ConcurrentHashMap<Long, List<WordBundle>>()
 
+    /**
+     * Whether a question may rely on sound.
+     *
+     * Two conditions, deliberately collapsed into one: the phone has a Chinese
+     * voice, and the learner has not muted the app. They are different reasons
+     * for the same consequence — a listening question would be unanswerable —
+     * so every generator can keep asking one question instead of two.
+     */
+    private val canSpeak: Boolean get() = voiceInstalled && audioEnabled
+
     fun setTtsAvailable(available: Boolean) {
-        ttsReady = available
+        voiceInstalled = available
+    }
+
+    fun setAudioEnabled(enabled: Boolean) {
+        audioEnabled = enabled
     }
 
     private fun today(): Long = LocalDate.now().toEpochDay()
 
     val deckContext: DeckContext = object : DeckContext {
-        override val ttsAvailable: Boolean get() = ttsReady
+        override val ttsAvailable: Boolean get() = canSpeak
 
         // Read once and held: 44 rows that never change between releases, and
         // every measure-word question asks for the same list.
@@ -61,6 +76,12 @@ class Repo(
             pool(word)
                 .map { it.hanzi }
                 .filter { it != word.hanzi }
+                .distinct()
+                .take(count)
+
+        override fun distractorCharacterGlosses(exclude: String, count: Int): List<String> =
+            content.characterDistractors(exclude, count * 2)
+                .mapNotNull { it.gloss }
                 .distinct()
                 .take(count)
 
@@ -109,6 +130,13 @@ class Repo(
         tags = listOf("added"),
         relations = emptyList(),
     )
+
+    /** A character card, with every word of yours that is built from it. */
+    suspend fun character(hanzi: String): Pair<CharacterCard, List<Triple<Long, String, String?>>>? =
+        withContext(Dispatchers.IO) {
+            val card = content.character(hanzi) ?: return@withContext null
+            card to content.wordsWith(hanzi)
+        }
 
     suspend fun userWords(): List<WordBundle> = withContext(Dispatchers.IO) {
         dao.userWords().map { it.toBundle() }
@@ -173,7 +201,7 @@ class Repo(
      */
     suspend fun quizAvailability(): Map<String, Int> = withContext(Dispatchers.IO) {
         val counts = content.questionAvailability()
-        if (ttsReady) return@withContext counts
+        if (canSpeak) return@withContext counts
         val silent = Registry.all
             .filter { Requirement.AUDIO in it.requires }
             .map { it.id }
@@ -316,6 +344,77 @@ class Repo(
                 }
             }.sortedWith(compareBy({ it.dueAt }, { it.box }, { it.wordId }))
         }
+
+    /**
+     * The character deck, filtered and ordered exactly as the word deck is.
+     *
+     * Commonest character first within a due day, so a session spent on
+     * characters is spent on the ones that unlock the most words.
+     */
+    suspend fun characterOrder(filter: CardFilter): List<CharacterState> =
+        withContext(Dispatchers.IO) {
+            val states = dao.allCharacterStates().associateBy { it.hanzi }
+            val today = today()
+            val rank = content.teachableCharacters()
+                .withIndex()
+                .associate { (i, c) -> c.hanzi to i }
+
+            rank.keys
+                .map { states[it] ?: CharacterState(hanzi = it) }
+                .filter { state ->
+                    when (filter) {
+                        CardFilter.DUE -> state.state != CardState.STATE_RETIRED &&
+                            state.dueAt <= today
+                        CardFilter.ALL -> state.state != CardState.STATE_RETIRED
+                        CardFilter.STRUGGLING -> state.state == CardState.STATE_STRUGGLING
+                        CardFilter.LEARNING -> state.state == CardState.STATE_LEARNING
+                        CardFilter.KNOWN -> state.state == CardState.STATE_KNOWN
+                        CardFilter.RETIRED -> state.state == CardState.STATE_RETIRED
+                    }
+                }
+                .sortedWith(
+                    compareBy({ it.dueAt }, { it.box }, { rank[it.hanzi] ?: 0 })
+                )
+        }
+
+    suspend fun characterWindow(hanzi: List<String>): Map<String, CharacterCard> =
+        withContext(Dispatchers.IO) {
+            if (hanzi.isEmpty()) emptyMap()
+            else content.teachableCharacters()
+                .filter { it.hanzi in hanzi }
+                .associateBy { it.hanzi }
+        }
+
+    suspend fun swipeCharacter(
+        current: CharacterState,
+        swipe: CardDeck.Swipe,
+    ): CharacterState = withContext(Dispatchers.IO) {
+        CardDeck.apply(current, swipe, today()).also { dao.putCharacterState(it) }
+    }
+
+    suspend fun restoreCharacterState(state: CharacterState) =
+        withContext(Dispatchers.IO) { dao.putCharacterState(state) }
+
+    suspend fun reviveCharacter(hanzi: String): CharacterState? =
+        withContext(Dispatchers.IO) {
+            val current = dao.characterState(hanzi) ?: return@withContext null
+            CardDeck.revive(current, today()).also { dao.putCharacterState(it) }
+        }
+
+    suspend fun characterCounts(): Map<CardFilter, Int> = withContext(Dispatchers.IO) {
+        val counts = dao.characterStateCounts().associate { it.state to it.n }
+        val total = content.teachableCharacters().size
+        val touched = counts.values.sum()
+        mapOf(
+            // Characters that have never been swiped are still learning, the
+            // same convention the word deck uses.
+            CardFilter.STRUGGLING to (counts[CardState.STATE_STRUGGLING] ?: 0),
+            CardFilter.LEARNING to
+                (counts[CardState.STATE_LEARNING] ?: 0) + (total - touched),
+            CardFilter.KNOWN to (counts[CardState.STATE_KNOWN] ?: 0),
+            CardFilter.RETIRED to (counts[CardState.STATE_RETIRED] ?: 0),
+        )
+    }
 
     /** The words for a small window of that order — what is on screen and next. */
     suspend fun cardWindow(ids: List<Long>): Map<Long, WordBundle> =

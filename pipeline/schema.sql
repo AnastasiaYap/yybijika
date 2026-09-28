@@ -70,6 +70,34 @@ CREATE TABLE example (
     segment_count   INTEGER NOT NULL DEFAULT 0
 );
 
+-- One row per character that the deck's words are built from.
+--
+-- A character is not a smaller word: 院 never appears alone in the notes, but it
+-- is the reason 医院, 学院 and 工学院 are one idea rather than three. Its meaning is
+-- what it contributes to a compound, which is why the glosses are hand-written
+-- in pipeline/characters.py rather than lifted from a dictionary.
+CREATE TABLE character (
+    hanzi      TEXT PRIMARY KEY,
+    pinyin     TEXT NOT NULL,
+    gloss      TEXT,                 -- Indonesian
+    gloss_en   TEXT,
+    word_count INTEGER NOT NULL DEFAULT 0,
+    -- 'headword' when the notes already defined it as a word in its own right,
+    -- 'written' when the meaning was written for this table. Kept so a gloss
+    -- can always be traced back to whoever is answerable for it.
+    source     TEXT NOT NULL
+);
+
+-- Which characters each word is made of, in order.
+CREATE TABLE word_character (
+    word_id  INTEGER NOT NULL REFERENCES word(id) ON DELETE CASCADE,
+    hanzi    TEXT NOT NULL REFERENCES character(hanzi) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (word_id, position)
+);
+
+CREATE INDEX idx_word_character_hanzi ON word_character(hanzi);
+
 CREATE TABLE pattern (
     id          INTEGER PRIMARY KEY,
     formula     TEXT NOT NULL,

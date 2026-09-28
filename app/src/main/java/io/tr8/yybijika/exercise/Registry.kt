@@ -9,6 +9,7 @@ import io.tr8.yybijika.exercise.Requirement.GLOSS
 import io.tr8.yybijika.exercise.Requirement.MEASURE
 import io.tr8.yybijika.exercise.Requirement.SEMANTIC_LINK
 import io.tr8.yybijika.exercise.Requirement.SHARED_CHARACTER
+import io.tr8.yybijika.exercise.Requirement.TAUGHT_CHARACTER
 import io.tr8.yybijika.exercise.Requirement.TRANSLATABLE
 import io.tr8.yybijika.exercise.Requirement.VERIFIED_PINYIN
 import io.tr8.yybijika.learn.Skill
@@ -40,6 +41,8 @@ object Registry {
         OddOneOut,
         PinyinToHanzi,
         TranslateSentence,
+        CharacterMeaning,
+        WordBuilding,
     )
 
     private val byId = all.associateBy { it.id }
@@ -60,6 +63,7 @@ object Registry {
         if (word.confusables.isNotEmpty() && word.clozeExamples.isNotEmpty()) add(CONFUSABLE)
         if (word.measures.isNotEmpty()) add(MEASURE)
         if (word.semanticLinks.isNotEmpty()) add(SEMANTIC_LINK)
+        if (word.taughtCharacters.isNotEmpty()) add(TAUGHT_CHARACTER)
         // Three of a kind plus one outsider, so a family of two is not enough.
         if (word.sharesCharacterWith.groupBy { it.note }.any { it.value.size >= 2 }) {
             add(SHARED_CHARACTER)

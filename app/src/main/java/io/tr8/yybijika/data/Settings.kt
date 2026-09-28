@@ -37,6 +37,18 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_ID_FIRST, true)
         set(value) = prefs.edit { putBoolean(KEY_ID_FIRST, value) }
 
+    /**
+     * Whether the app is allowed to make a sound.
+     *
+     * Separate from whether the phone *can* speak Chinese. A learner on a bus
+     * wants silence without being told the listening drills are unavailable, so
+     * this is a choice rather than a capability — but the two combine, because a
+     * listening question you have muted is a question you cannot answer.
+     */
+    var audioEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUDIO, true)
+        set(value) = prefs.edit { putBoolean(KEY_AUDIO, value) }
+
     /** Check GitHub for a new release on launch. */
     var autoCheckUpdates: Boolean
         get() = prefs.getBoolean(KEY_AUTO_UPDATE, true)
@@ -56,5 +68,6 @@ class Settings(context: Context) {
         const val KEY_SESSION_SIZE = "session_size"
         const val KEY_ID_FIRST = "indonesian_first"
         const val KEY_AUTO_UPDATE = "auto_check_updates"
+        const val KEY_AUDIO = "audio_enabled"
     }
 }

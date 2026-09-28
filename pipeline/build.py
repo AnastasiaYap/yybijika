@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import characters  # noqa: E402
 import curate  # noqa: E402
 import essays  # noqa: E402
 import lex  # noqa: E402
@@ -276,6 +277,60 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
         # The reverse direction is only interesting when the measure word is
         # itself something the notes taught.
         link(measure, noun, "measure", f"一{measure}{noun}")
+
+    # --- characters -------------------------------------------------------
+    #
+    # Built after the words, because a character that is itself a headword takes
+    # its meaning from that entry rather than from a second hand-written one:
+    # two glosses for 湖 could disagree, and the word entry is the one the
+    # learner already sees everywhere else. characters.OVERRIDES names the
+    # exceptions, where the word sense and the compound sense genuinely differ.
+    used: dict[str, int] = {}
+    for hanzi in merged:
+        for ch in dict.fromkeys(zh.RE_HAN.findall(hanzi)):
+            used[ch] = used.get(ch, 0) + 1
+
+    for ch, count in sorted(used.items()):
+        entry = merged.get(ch)
+        override = characters.OVERRIDES.get(ch)
+        if override is not None:
+            # The notes defined this character as a word, but it means something
+            # else inside a compound. The override says which, and why.
+            gloss_id, gloss_en = override
+            source = "written"
+        elif entry is not None and entry.glosses:
+            gloss_id = next(
+                (g.text for g in entry.glosses if g.lang == "id"), None
+            ) or entry.glosses[0].text
+            gloss_en = next(
+                (g.text for g in entry.glosses if g.lang == "en"), None
+            )
+            source = "headword"
+        else:
+            written = characters.GLOSSES.get(ch)
+            if written is None:
+                # A character used in only one word teaches nothing on its own,
+                # so it is listed without a meaning rather than guessed at.
+                gloss_id = gloss_en = None
+            else:
+                gloss_id, gloss_en = written
+            source = "written" if written else "none"
+
+        reading = characters.READINGS.get(ch) or zh.read(ch).pinyin
+        conn.execute(
+            """INSERT INTO character (hanzi, pinyin, gloss, gloss_en,
+                                      word_count, source)
+               VALUES (?,?,?,?,?,?)""",
+            (ch, reading, gloss_id, gloss_en, count, source),
+        )
+
+    for hanzi, wid in word_ids.items():
+        for i, ch in enumerate(zh.RE_HAN.findall(hanzi)):
+            conn.execute(
+                """INSERT OR IGNORE INTO word_character (word_id, hanzi, position)
+                   VALUES (?,?,?)""",
+                (wid, ch, i),
+            )
 
     # Reading passages, written around words that are already in the deck.
     for essay in essays.ESSAYS:

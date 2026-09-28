@@ -30,7 +30,7 @@ different mental modes fighting each other. They separate.
   - [x] **Review** — the scheduled queue across all four skills. Unchanged in
         purpose, but no longer the only way to study.
 
-## C — A richer question set  (your point 3)  — 7 of 9
+## C — A richer question set  (your point 3)  — DONE
 
 yyhsk had many question shapes; this deck has a tenth of the vocabulary, so the
 questions have to carry more of the weight, not less. Nine new types, each
@@ -44,8 +44,8 @@ using data the deck already holds:
   - [x] Sentence translation — Indonesian prompt, build the Chinese.
   - [x] Dictation — hear a whole sentence, type it. Uses all 2,371 sentences.
   - [x] Pinyin → hanzi — read the reading, write the characters.
-  - [ ] Character meaning — what does 院 contribute? (needs D)
-  - [ ] Word building — which characters make the word meaning "faculty"? (needs D)
+  - [x] Character meaning — what does 院 contribute?
+  - [x] Word building — which characters make the word meaning "faculty"?
 
 Done along the way, because the types needed it:
 
@@ -64,12 +64,34 @@ Done along the way, because the types needed it:
         1,173-word deck, and `measure_word` could offer 部 as the wrong answer
         to 小说 when 一部小说 is also correct.
 
-## D — Characters as first-class cards  (my recommendation)
+## D — Characters as first-class cards  (my recommendation)  — DONE
 
 1,173 words are built from 1,012 characters, 529 of which appear in two or more
 words. Teaching the words without the characters teaches the same idea ten times.
 
-  - [ ] A character table: meaning, reading(s), and the words it builds.
-  - [ ] A character card in the app, reachable from any word that contains it.
-  - [ ] Characters enter the schedule like words do.
-  - [ ] Unlocks the last two question types in C.
+  - [x] A character table: meaning, reading(s), and the words it builds.
+        529 characters appear in two or more words; all 529 carry a meaning in
+        both Indonesian and English. 131 inherit it from their own headword
+        entry, 398 were written for `pipeline/characters.py`, and 19 headword
+        characters have an override because the word sense and the compound
+        sense genuinely differ — 所 is filed as "the measure word for buildings",
+        which is useless in 事务所 and 派出所.
+  - [x] A character card in the app, reachable from any word that contains it.
+        The characters sit under the word on its detail screen, before the
+        meaning, because that is the order the word is read in.
+  - [x] Characters enter the schedule like words do. The Cards screen gained a
+        Words / Characters switch; the character deck has the same three
+        gestures, the same filters and the same ladder, which now lives in one
+        place (`CardDeck.step`) with a test asserting the two decks move
+        identically.
+  - [x] Unlocks the last two question types in C.
+
+## Also done — sound on and off  (your ask)
+
+  - [x] A mute toggle in the header of both Cards and the session player, on one
+        stored preference. Muting also takes the three listening question types
+        off the Quiz menu rather than leaving them there to produce an empty
+        quiz, and hides the play buttons instead of leaving them dead.
+  - [x] Cards now speak themselves as they arrive when sound is on, which is
+        also why the mute button had to be on that screen: unattended speech is
+        the kind you want to stop immediately, not after finding Settings.

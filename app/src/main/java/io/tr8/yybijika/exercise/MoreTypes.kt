@@ -6,6 +6,7 @@ import io.tr8.yybijika.exercise.Requirement.GLOSS
 import io.tr8.yybijika.exercise.Requirement.MEASURE
 import io.tr8.yybijika.exercise.Requirement.SEMANTIC_LINK
 import io.tr8.yybijika.exercise.Requirement.SHARED_CHARACTER
+import io.tr8.yybijika.exercise.Requirement.TAUGHT_CHARACTER
 import io.tr8.yybijika.exercise.Requirement.TRANSLATABLE
 import io.tr8.yybijika.exercise.Requirement.VERIFIED_PINYIN
 import io.tr8.yybijika.learn.Skill
@@ -301,6 +302,98 @@ object TranslateSentence : ExerciseType {
             solution = solution,
             explanation = listOfNotNull(sentence.zh, sentence.pinyin)
                 .joinToString("  ·  "),
+        )
+    }
+}
+
+// --------------------------------------------------------------------------
+// Characters
+// --------------------------------------------------------------------------
+
+/**
+ * What is this character doing in this word?
+ *
+ * The question the deck was built to be able to ask. 医院, 学院, 商学院 and 工学院
+ * are four vocabulary items and one idea; a learner who has only ever met them
+ * as whole words has memorised the idea four times and still cannot read 法院.
+ * Asking what 院 contributes is what turns the fourth one into a guess worth
+ * making.
+ *
+ * The word is named in the prompt, so this is never a bare character quiz — the
+ * character is being explained by the word it is standing in.
+ */
+object CharacterMeaning : ExerciseType {
+    override val id = "character_meaning"
+    override val skill = Skill.RECOGNITION
+    override val label = "What does this character mean?"
+    override val requires = setOf(GLOSS, TAUGHT_CHARACTER)
+
+    override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
+        if (word.primaryGloss == null) return null
+        // The character that recurs the most is the one worth the question: it
+        // will pay for itself across the most other words.
+        val part = word.taughtCharacters.maxByOrNull { it.wordCount } ?: return null
+        val answer = part.gloss ?: return null
+        val distractors = ctx.distractorCharacterGlosses(part.hanzi, 3)
+            .filter { it != answer }
+            .distinct()
+        if (distractors.size < 3) return null
+        val choices = (distractors.take(3) + answer)
+            .shuffled(Random(ctx.shuffleSeed(word, id)))
+        return Exercise.MultipleChoice(
+            typeId = id,
+            skill = skill,
+            word = word,
+            prompt = "In ${word.hanzi}, what does ${part.hanzi} contribute?",
+            promptPinyin = "${word.hanzi} ${word.pinyin} — ${word.primaryGloss}",
+            choices = choices,
+            answerIndex = choices.indexOf(answer),
+            explanation = "${part.hanzi} ${part.pinyin} — $answer" +
+                (part.glossEn?.let { " · $it" } ?: "") +
+                "  ·  in ${part.wordCount} words in your deck",
+        )
+    }
+}
+
+/**
+ * Build the word from its characters.
+ *
+ * The reverse of [CharacterMeaning], and the harder direction: recognising that
+ * 院 means an institution is one thing, reaching for it when you want to say
+ * "faculty" is another. The wrong tiles are other real characters from the deck,
+ * so the word cannot be assembled by elimination.
+ */
+object WordBuilding : ExerciseType {
+    override val id = "word_building"
+    override val skill = Skill.PRODUCTION
+    override val label = "Build the word"
+    override val requires = setOf(GLOSS, TAUGHT_CHARACTER)
+
+    override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
+        val gloss = word.primaryGloss ?: return null
+        if (word.taughtCharacters.isEmpty()) return null
+        val solution = word.characters.map { it.hanzi }
+        // One character is not a word to build, and a set phrase is a spelling
+        // test rather than a question about how words are put together.
+        if (solution.size < 2 || solution.size > 4) return null
+
+        val decoys = ctx.distractorHanzi(word, 12)
+            .flatMap { other -> other.map(Char::toString) }
+            .filter { it !in solution }
+            .distinct()
+            .take(3)
+        if (decoys.size < 3) return null
+
+        return Exercise.TileBuilder(
+            typeId = id,
+            skill = skill,
+            word = word,
+            prompt = gloss,
+            tiles = (solution + decoys).shuffled(Random(ctx.shuffleSeed(word, id))),
+            solution = solution,
+            explanation = word.taughtCharacters.joinToString("  ·  ") {
+                "${it.hanzi} ${it.pinyin} — ${it.gloss}"
+            },
         )
     }
 }

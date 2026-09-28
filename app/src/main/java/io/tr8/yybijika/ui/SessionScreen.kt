@@ -59,6 +59,8 @@ fun SessionScreen(
     onGrade: (Grade) -> Unit,
     onSpeak: (String) -> Unit,
     onDone: () -> Unit,
+    audio: AudioState,
+    onToggleAudio: (Boolean) -> Unit,
 ) {
     if (state.finished) {
         SessionDone(state, onDone)
@@ -90,12 +92,18 @@ fun SessionScreen(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                "${state.index + 1}/${state.total}" +
-                    if (state.combo >= 3) "  ×${state.combo}" else "",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Muting mid-session is allowed, and takes effect on the next
+                // question rather than retroactively: the one on screen has
+                // already spoken, and silently re-grading it would be worse.
+                AudioToggle(audio, onToggleAudio)
+                Text(
+                    "${state.index + 1}/${state.total}" +
+                        if (state.combo >= 3) "  ×${state.combo}" else "",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         Column(

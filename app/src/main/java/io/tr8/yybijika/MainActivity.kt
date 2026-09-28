@@ -41,6 +41,7 @@ import io.tr8.yybijika.ui.AddNotesScreen
 import io.tr8.yybijika.ui.AppViewModel
 import io.tr8.yybijika.ui.BrowseScreen
 import io.tr8.yybijika.ui.CardsScreen
+import io.tr8.yybijika.ui.CharacterScreen
 import io.tr8.yybijika.ui.HomeScreen
 import io.tr8.yybijika.ui.QuizScreen
 import io.tr8.yybijika.ui.ReadScreen
@@ -65,7 +66,7 @@ private enum class Tab(val label: String, val zh: String, val icon: ImageVector)
 }
 
 /** Screens pushed on top of a tab rather than being one. */
-private enum class Overlay { NONE, SESSION, QUIZ_RUN, BROWSE, DETAIL, SETTINGS, ADD }
+private enum class Overlay { NONE, SESSION, QUIZ_RUN, BROWSE, DETAIL, CHARACTER, SETTINGS, ADD }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +94,10 @@ private fun App(vm: AppViewModel = viewModel()) {
     val addText by vm.addText.collectAsState()
     val addState by vm.addState.collectAsState()
     val quiz by vm.quiz.collectAsState()
+    val audio by vm.audio.collectAsState()
+    val character by vm.character.collectAsState()
+    val charCards by vm.charCards.collectAsState()
+    val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
     // way to learn they came back with it is to look again on resume.
@@ -107,6 +112,13 @@ private fun App(vm: AppViewModel = viewModel()) {
 
     fun back() {
         when (overlay) {
+            // A character was opened from a word, so back goes to that word
+            // rather than all the way out: following 学院 → 院 → 商学院 should
+            // walk back the way it came.
+            Overlay.CHARACTER -> {
+                vm.closeCharacter()
+                overlay = if (detail != null) Overlay.DETAIL else Overlay.BROWSE
+            }
             Overlay.DETAIL -> { vm.closeWord(); overlay = Overlay.BROWSE }
             Overlay.NONE -> if (tab != Tab.HOME) tab = Tab.HOME
             else -> overlay = Overlay.NONE
@@ -130,6 +142,7 @@ private fun App(vm: AppViewModel = viewModel()) {
                                 Overlay.ADD -> "Add notes"
                                 Overlay.BROWSE -> "Search"
                                 Overlay.DETAIL -> detail?.first?.hanzi.orEmpty()
+                                Overlay.CHARACTER -> character?.first?.hanzi.orEmpty()
                                 Overlay.SETTINGS -> "Settings"
                                 Overlay.NONE -> ""
                             }
@@ -172,6 +185,8 @@ private fun App(vm: AppViewModel = viewModel()) {
                         onGrade = vm::grade,
                         onSpeak = vm::speak,
                         onDone = { overlay = Overlay.NONE },
+                        audio = audio,
+                        onToggleAudio = vm::setAudioEnabled,
                     )
 
                     Overlay.BROWSE -> BrowseScreen(
@@ -186,6 +201,22 @@ private fun App(vm: AppViewModel = viewModel()) {
                             mastery = mastery,
                             onSpeak = vm::speak,
                             onOpenRelated = vm::openWordByHanzi,
+                            onOpenCharacter = {
+                                vm.openCharacter(it); overlay = Overlay.CHARACTER
+                            },
+                        )
+                    }
+
+                    Overlay.CHARACTER -> character?.let { (card, words) ->
+                        CharacterScreen(
+                            character = card,
+                            words = words,
+                            onSpeak = vm::speak,
+                            onOpenWord = {
+                                vm.closeCharacter()
+                                vm.openWordByHanzi(it)
+                                overlay = Overlay.DETAIL
+                            },
                         )
                     }
 
@@ -236,11 +267,21 @@ private fun App(vm: AppViewModel = viewModel()) {
 
                     Tab.CARDS -> CardsScreen(
                         state = cards,
+                        characters = charCards,
+                        kind = deckKind,
+                        audio = audio,
                         onSwipe = vm::swipe,
                         onUndo = vm::undoSwipe,
-                        onFilter = { vm.loadCards(it) },
+                        // One filter drives both decks, so switching between
+                        // them keeps you in the same slice.
+                        onFilter = { vm.loadCards(it); vm.loadCharacterCards(it) },
                         onRevive = vm::reviveCard,
                         onSpeak = vm::speak,
+                        onToggleAudio = vm::setAudioEnabled,
+                        onDeckKind = vm::setDeckKind,
+                        onSwipeCharacter = vm::swipeCharacter,
+                        onUndoCharacter = vm::undoCharacterSwipe,
+                        onReviveCharacter = vm::reviveCharacter,
                     )
 
                     Tab.REVIEW -> {

@@ -2,6 +2,7 @@ package io.tr8.yybijika.data
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import io.tr8.yybijika.exercise.CharacterPart
 import io.tr8.yybijika.exercise.ExampleSentence
 import io.tr8.yybijika.exercise.Relation
 import io.tr8.yybijika.exercise.WordBundle
@@ -175,6 +176,30 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
             }
         }
 
+        // One join for the whole batch rather than a query per word: the two
+        // character exercises need this for every word they are offered.
+        val parts = mutableMapOf<Long, MutableList<CharacterPart>>()
+        db.rawQuery(
+            """SELECT wc.word_id, ch.hanzi, ch.pinyin, ch.gloss, ch.gloss_en,
+                      ch.word_count
+               FROM word_character wc JOIN character ch ON ch.hanzi = wc.hanzi
+               WHERE wc.word_id IN ($placeholders)
+               ORDER BY wc.word_id, wc.position""",
+            args,
+        ).use { c ->
+            while (c.moveToNext()) {
+                parts.getOrPut(c.getLong(0)) { mutableListOf() }.add(
+                    CharacterPart(
+                        hanzi = c.getString(1),
+                        pinyin = c.getString(2),
+                        gloss = c.getString(3),
+                        glossEn = c.getString(4),
+                        wordCount = c.getInt(5),
+                    )
+                )
+            }
+        }
+
         return db.rawQuery(
             "SELECT id, hanzi, hanzi_trad, pinyin, pinyin_verified, is_phrase " +
                 "FROM word WHERE id IN ($placeholders)", args
@@ -195,6 +220,7 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                             examples = examples[id].orEmpty(),
                             tags = tags[id].orEmpty(),
                             relations = links[id].orEmpty(),
+                            characters = parts[id].orEmpty(),
                         )
                     )
                 }
@@ -337,6 +363,114 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
     }
 
 
+    /**
+     * The characters a word is built from, in order, with what each contributes.
+     *
+     * Loaded per word rather than with the bundle: most screens never show them,
+     * and a join on every word in a session would cost more than the one screen
+     * that does.
+     */
+    fun charactersOf(hanzi: String): List<CharacterCard> {
+        val ids = hanzi.mapNotNull { ch ->
+            ch.takeIf { it.code in 0x4E00..0x9FFF }?.toString()
+        }
+        if (ids.isEmpty()) return emptyList()
+        val placeholders = ids.joinToString(",") { "?" }
+        val found = db.rawQuery(
+            "SELECT hanzi, pinyin, gloss, gloss_en, word_count FROM character " +
+                "WHERE hanzi IN ($placeholders)",
+            ids.toTypedArray(),
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(
+                        CharacterCard(
+                            hanzi = c.getString(0),
+                            pinyin = c.getString(1),
+                            gloss = c.getString(2),
+                            glossEn = c.getString(3),
+                            wordCount = c.getInt(4),
+                        )
+                    )
+                }
+            }
+        }.associateBy { it.hanzi }
+        // Rebuilt in the word's own order: 出口 and 口出 are different words, and
+        // the IN clause comes back in whatever order SQLite likes.
+        return ids.mapNotNull { found[it] }
+    }
+
+    fun character(hanzi: String): CharacterCard? =
+        charactersOf(hanzi).firstOrNull { it.hanzi == hanzi }
+
+    /**
+     * Every word in the deck built from this character, commonest use first.
+     *
+     * This list is the character card's argument for itself: 院 means nothing
+     * until 医院, 学院, 商学院 and 工学院 are sitting underneath it.
+     */
+    fun wordsWith(hanzi: String, limit: Int = 40): List<Triple<Long, String, String?>> =
+        db.rawQuery(
+            """SELECT w.id, w.hanzi,
+                      (SELECT s.gloss FROM sense s WHERE s.word_id = w.id
+                        AND s.lang = 'id' ORDER BY s.ordinal LIMIT 1)
+               FROM word_character wc JOIN word w ON w.id = wc.word_id
+               WHERE wc.hanzi = ?
+               ORDER BY length(w.hanzi), w.hanzi
+               LIMIT ?""",
+            arrayOf(hanzi, limit.toString()),
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(Triple(c.getLong(0), c.getString(1), c.getString(2)))
+                }
+            }
+        }
+
+    /**
+     * Every character worth rehearsing, commonest first.
+     *
+     * The ones used in a single word are left out: their card would say nothing
+     * the word's own card does not already say.
+     */
+    fun teachableCharacters(): List<CharacterCard> = db.rawQuery(
+        """SELECT hanzi, pinyin, gloss, gloss_en, word_count FROM character
+           WHERE word_count >= 2 AND gloss IS NOT NULL AND gloss <> ''
+           ORDER BY word_count DESC, hanzi""",
+        null,
+    ).use { c ->
+        buildList {
+            while (c.moveToNext()) {
+                add(
+                    CharacterCard(
+                        c.getString(0), c.getString(1), c.getString(2),
+                        c.getString(3), c.getInt(4),
+                    )
+                )
+            }
+        }
+    }
+
+    /** Character meanings to use as wrong answers, never the right one. */
+    fun characterDistractors(exclude: String, count: Int): List<CharacterCard> =
+        db.rawQuery(
+            """SELECT hanzi, pinyin, gloss, gloss_en, word_count FROM character
+               WHERE hanzi <> ? AND gloss IS NOT NULL AND word_count >= 2
+               ORDER BY RANDOM() LIMIT ?""",
+            arrayOf(exclude, count.toString()),
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(
+                        CharacterCard(
+                            c.getString(0), c.getString(1), c.getString(2),
+                            c.getString(3), c.getInt(4),
+                        )
+                    )
+                }
+            }
+        }
+
     /** Every measure word in the deck, for measure-word distractors. */
     fun measureWords(): List<String> = db.rawQuery(
         """SELECT DISTINCT related_hanzi FROM relation
@@ -376,6 +510,24 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
             DeckStats(0, 0, 0, 0)
         }
     }
+}
+
+/**
+ * One character, and what it contributes to the words built from it.
+ *
+ * [wordCount] is how many words in the deck use it, which is also how much the
+ * card is worth: a character in one word is a fact about that word, a character
+ * in eleven is a piece of the language.
+ */
+data class CharacterCard(
+    val hanzi: String,
+    val pinyin: String,
+    val gloss: String?,
+    val glossEn: String?,
+    val wordCount: Int,
+) {
+    /** Only a character that recurs, and has a meaning, is worth teaching. */
+    val teachable: Boolean get() = wordCount >= 2 && !gloss.isNullOrBlank()
 }
 
 data class DeckStats(

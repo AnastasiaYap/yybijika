@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.tr8.yybijika.data.Mastery
 import io.tr8.yybijika.exercise.WordBundle
@@ -105,6 +106,7 @@ fun WordDetailScreen(
     mastery: Map<Skill, Mastery>,
     onSpeak: (String) -> Unit,
     onOpenRelated: (String) -> Unit = {},
+    onOpenCharacter: (String) -> Unit = {},
 ) {
     Column(
         Modifier
@@ -131,6 +133,46 @@ fun WordDetailScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        // The characters sit directly under the word, before its meaning, because
+        // that is the order in which the word is actually read. Each one opens
+        // its own card: this is the route from any word to its parts.
+        if (word.characters.size > 1) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                word.characters.forEach { part ->
+                    Card(
+                        Modifier
+                            .weight(1f)
+                            .clickable { onOpenCharacter(part.hanzi) },
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(part.hanzi, style = HanziInline)
+                            Text(
+                                part.pinyin,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                // A character used in one word has no meaning of
+                                // its own on file, and saying so is better than
+                                // a blank that looks like a bug.
+                                part.gloss ?: "—",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                            )
+                        }
+                    }
+                }
             }
         }
 

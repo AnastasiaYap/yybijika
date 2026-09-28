@@ -47,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.tr8.yybijika.data.CardState
+import io.tr8.yybijika.data.CharacterCard
+import io.tr8.yybijika.data.CharacterState
 import io.tr8.yybijika.exercise.WordBundle
 import io.tr8.yybijika.learn.CardDeck
 import io.tr8.yybijika.learn.CardFilter
@@ -67,16 +69,50 @@ import kotlinx.coroutines.launch
 @Composable
 fun CardsScreen(
     state: CardsState,
+    characters: CharacterCardsState,
+    kind: DeckKind,
+    audio: AudioState,
     onSwipe: (CardDeck.Swipe) -> Unit,
     onUndo: () -> Unit,
     onFilter: (CardFilter) -> Unit,
     onRevive: (Long) -> Unit,
     onSpeak: (String) -> Unit,
+    onToggleAudio: (Boolean) -> Unit,
+    onDeckKind: (DeckKind) -> Unit,
+    onSwipeCharacter: (CardDeck.Swipe) -> Unit,
+    onUndoCharacter: () -> Unit,
+    onReviveCharacter: (String) -> Unit,
 ) {
+    if (kind == DeckKind.CHARACTERS) {
+        CharacterDeck(
+            state = characters,
+            filter = state.filter,
+            audio = audio,
+            onSwipe = onSwipeCharacter,
+            onUndo = onUndoCharacter,
+            onFilter = onFilter,
+            onRevive = onReviveCharacter,
+            onSpeak = onSpeak,
+            onToggleAudio = onToggleAudio,
+            onDeckKind = onDeckKind,
+        )
+        return
+    }
+
     var confirmRetire by remember { mutableStateOf(false) }
 
+    // With sound on, each card says itself as it arrives, so a pass through the
+    // deck trains the ear as well as the eye. It is also the reason the mute
+    // button is on this screen: unattended speech is the kind you want to stop
+    // immediately, not after finding Settings.
+    val speaking = state.current?.first?.hanzi
+    LaunchedEffect(speaking, audio.on) {
+        if (audio.on && speaking != null) onSpeak(speaking)
+    }
+
     Column(Modifier.fillMaxSize()) {
-        FilterBar(state, onFilter)
+        DeckSwitch(DeckKind.WORDS, onDeckKind)
+        FilterBar(state, onFilter, audio, onToggleAudio)
 
         if (state.order.isEmpty()) {
             EmptySlice(state.filter)
@@ -120,7 +156,7 @@ fun CardsScreen(
                 word = current.first,
                 cardState = current.second,
                 retired = state.filter == CardFilter.RETIRED,
-                onSpeak = onSpeak,
+                onSpeak = onSpeak.takeIf { audio.on },
                 onRevive = { onRevive(current.first.id) },
                 onSwipe = { swipe ->
                     if (swipe == CardDeck.Swipe.RETIRE) confirmRetire = true
@@ -156,19 +192,33 @@ fun CardsScreen(
 }
 
 @Composable
-private fun FilterBar(state: CardsState, onFilter: (CardFilter) -> Unit) {
-    LazyRow(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+private fun FilterBar(
+    state: CardsState,
+    onFilter: (CardFilter) -> Unit,
+    audio: AudioState,
+    onToggleAudio: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(CardFilter.entries.toList()) { filter ->
-            val n = state.counts[filter]
-            FilterChip(
-                selected = state.filter == filter,
-                onClick = { onFilter(filter) },
-                label = { Text(if (n != null) "${filter.label}  $n" else filter.label) },
-            )
+        // The chips scroll; the mute button does not. Sound is the one control
+        // here you may need in a hurry, so it keeps a fixed corner rather than
+        // sliding off the end of a list of six filters.
+        LazyRow(
+            Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(CardFilter.entries.toList()) { filter ->
+                val n = state.counts[filter]
+                FilterChip(
+                    selected = state.filter == filter,
+                    onClick = { onFilter(filter) },
+                    label = { Text(if (n != null) "${filter.label}  $n" else filter.label) },
+                )
+            }
         }
+        AudioToggle(audio, onToggleAudio)
     }
 }
 
@@ -202,20 +252,69 @@ private fun SwipeCard(
     word: WordBundle,
     cardState: CardState,
     retired: Boolean,
-    onSpeak: (String) -> Unit,
+    // Null when the app is muted, so the play button is absent rather than
+    // present and dead.
+    onSpeak: ((String) -> Unit)?,
     onRevive: () -> Unit,
     onSwipe: (CardDeck.Swipe) -> Unit,
+) {
+    SwipeShell(
+        key = word.id,
+        retired = retired,
+        onSwipe = onSwipe,
+        front = { CardFace(word, cardState, retired, onRevive) },
+        back = { CardDetail(word, onSpeak) },
+    )
+}
+
+/**
+ * A character card in the same deck, with the same three gestures.
+ *
+ * Characters are groomed exactly as words are — the thing being judged is still
+ * "do I know this" — so they share the gesture shell rather than getting a
+ * second, slightly different one that would drift.
+ */
+@Composable
+private fun SwipeCharacterCard(
+    character: CharacterCard,
+    cardState: CharacterState,
+    retired: Boolean,
+    onSpeak: ((String) -> Unit)?,
+    onRevive: () -> Unit,
+    onSwipe: (CardDeck.Swipe) -> Unit,
+) {
+    SwipeShell(
+        key = character.hanzi,
+        retired = retired,
+        onSwipe = onSwipe,
+        front = { CharacterFace(character, cardState, retired, onRevive) },
+        back = { CharacterBack(character, onSpeak) },
+    )
+}
+
+/**
+ * The gesture, the tint and the flip, with nothing in it about what is on the
+ * card. Extracted so that adding characters to the deck could not quietly
+ * change how the destructive gesture behaves for words.
+ */
+@Composable
+private fun SwipeShell(
+    key: Any,
+    retired: Boolean,
+    onSwipe: (CardDeck.Swipe) -> Unit,
+    front: @Composable () -> Unit,
+    back: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
     val widthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
     val threshold = widthPx * 0.25f
 
-    var flipped by remember(word.id) { mutableStateOf(false) }
+    var flipped by remember(key) { mutableStateOf(false) }
     // Two float animatables rather than one Offset animatable: the Offset vector
     // converter is an extension that has to be imported separately, and two
     // floats read more plainly at the call sites below.
-    val dragX = remember(word.id) { Animatable(0f) }
-    val dragY = remember(word.id) { Animatable(0f) }
+    val dragX = remember(key) { Animatable(0f) }
+    val dragY = remember(key) { Animatable(0f) }
     val scope = rememberCoroutineScope()
 
     val rotation by animateFloatAsState(
@@ -246,7 +345,7 @@ private fun SwipeCard(
                     rotationY = rotation
                     cameraDistance = 12f * density.density
                 }
-                .pointerInput(word.id) {
+                .pointerInput(key) {
                     detectDragGestures(
                         onDrag = { change, delta ->
                             change.consume()
@@ -286,11 +385,7 @@ private fun SwipeCard(
                     .graphicsLayer { if (rotation > 90f) rotationY = 180f },
                 contentAlignment = Alignment.Center,
             ) {
-                if (rotation <= 90f) {
-                    CardFace(word, cardState, retired, onRevive)
-                } else {
-                    CardDetail(word, onSpeak)
-                }
+                if (rotation <= 90f) front() else back()
             }
         }
     }
@@ -323,7 +418,7 @@ private fun CardFace(
 }
 
 @Composable
-private fun CardDetail(word: WordBundle, onSpeak: (String) -> Unit) {
+private fun CardDetail(word: WordBundle, onSpeak: ((String) -> Unit)?) {
     Column(
         Modifier
             .fillMaxSize()
@@ -355,7 +450,9 @@ private fun CardDetail(word: WordBundle, onSpeak: (String) -> Unit) {
                 }
             }
         }
-        TextButton(onClick = { onSpeak(word.hanzi) }) { Text("🔊") }
+        onSpeak?.let { speak ->
+            TextButton(onClick = { speak(word.hanzi) }) { Text("🔊") }
+        }
     }
 }
 
@@ -387,3 +484,221 @@ private fun Legend() {
 private fun LegendItem(text: String, colour: Color) {
     Text(text, style = MaterialTheme.typography.labelSmall, color = colour)
 }
+
+@Composable
+private fun CharacterFace(
+    character: CharacterCard,
+    cardState: CharacterState,
+    retired: Boolean,
+    onRevive: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(character.hanzi, style = HanziHero, textAlign = TextAlign.Center)
+        // The count is the reason this character is in the deck at all, so it
+        // sits on the front: 院 in eleven words is worth more attention than a
+        // character you will meet twice.
+        Text(
+            "in ${character.wordCount} of your words",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (cardState.seenCount > 0) {
+            Text(
+                "${cardState.state} · box ${cardState.box}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (retired) {
+            TextButton(onClick = onRevive) { Text("Bring back") }
+        } else {
+            Text(
+                "tap to flip",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CharacterBack(character: CharacterCard, onSpeak: ((String) -> Unit)?) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+    ) {
+        Text(character.hanzi, style = HanziInline)
+        Text(character.pinyin, style = PinyinStyle, color = MaterialTheme.colorScheme.primary)
+        character.gloss?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+        }
+        character.glossEn?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        onSpeak?.let { speak ->
+            TextButton(onClick = { speak(character.hanzi) }) { Text("🔊") }
+        }
+    }
+}
+
+/**
+ * Words or characters.
+ *
+ * Two chips rather than a tab row: this is a choice of what you are looking at,
+ * not a place you navigate to, and the filters below it apply to either.
+ */
+@Composable
+private fun DeckSwitch(current: DeckKind, onSelect: (DeckKind) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DeckKind.entries.forEach { kind ->
+            FilterChip(
+                selected = current == kind,
+                onClick = { onSelect(kind) },
+                label = { Text(kind.label) },
+            )
+        }
+    }
+}
+
+/**
+ * The character deck: the same screen, grooming the parts instead of the words.
+ *
+ * 529 characters against 1,173 words, and the ones at the front appear in a
+ * dozen words each — which is why this deck is worth a pass of its own rather
+ * than being folded in among the words as extra cards.
+ */
+@Composable
+private fun CharacterDeck(
+    state: CharacterCardsState,
+    filter: CardFilter,
+    audio: AudioState,
+    onSwipe: (CardDeck.Swipe) -> Unit,
+    onUndo: () -> Unit,
+    onFilter: (CardFilter) -> Unit,
+    onRevive: (String) -> Unit,
+    onSpeak: (String) -> Unit,
+    onToggleAudio: (Boolean) -> Unit,
+    onDeckKind: (DeckKind) -> Unit,
+) {
+    var confirmRetire by remember { mutableStateOf(false) }
+
+    val speaking = state.current?.first?.hanzi
+    LaunchedEffect(speaking, audio.on) {
+        if (audio.on && speaking != null) onSpeak(speaking)
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        DeckSwitch(DeckKind.CHARACTERS, onDeckKind)
+        Row(
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(CardFilter.entries.toList()) { entry ->
+                    val n = state.counts[entry]
+                    FilterChip(
+                        selected = filter == entry,
+                        onClick = { onFilter(entry) },
+                        label = { Text(if (n != null) "${entry.label}  $n" else entry.label) },
+                    )
+                }
+            }
+            AudioToggle(audio, onToggleAudio)
+        }
+
+        if (state.order.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "Nothing in this slice of the character deck.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            return@Column
+        }
+
+        LinearProgressIndicator(
+            progress = { (state.index.toFloat() / state.size).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "${state.index + 1} / ${state.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (state.canUndo) TextButton(onClick = onUndo) { Text("Undo") }
+        }
+
+        val current = state.current
+        if (current == null) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator()
+            }
+            Legend()
+            return@Column
+        }
+
+        Box(Modifier.weight(1f)) {
+            SwipeCharacterCard(
+                character = current.first,
+                cardState = current.second,
+                retired = filter == CardFilter.RETIRED,
+                onSpeak = onSpeak.takeIf { audio.on },
+                onRevive = { onRevive(current.first.hanzi) },
+                onSwipe = { swipe ->
+                    if (swipe == CardDeck.Swipe.RETIRE) confirmRetire = true
+                    else onSwipe(swipe)
+                },
+            )
+        }
+
+        Legend()
+    }
+
+    if (confirmRetire) {
+        AlertDialog(
+            onDismissRequest = { confirmRetire = false },
+            title = { Text("Retire this character?") },
+            text = {
+                Text(
+                    "It leaves the rotation and stops coming up. The words built " +
+                        "from it are not affected, and you can bring it back any " +
+                        "time from the Retired filter."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRetire = false
+                    onSwipe(CardDeck.Swipe.RETIRE)
+                }) { Text("Retire") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRetire = false }) { Text("Keep it") }
+            },
+        )
+    }
+}
+

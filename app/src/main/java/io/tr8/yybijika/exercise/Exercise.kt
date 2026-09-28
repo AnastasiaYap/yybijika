@@ -20,6 +20,13 @@ data class WordBundle(
     val examples: List<ExampleSentence> = emptyList(),
     val tags: List<String> = emptyList(),
     val relations: List<Relation> = emptyList(),
+    /**
+     * The characters this word is built from, with what each contributes.
+     *
+     * Empty for a word you added yourself, which has no character data behind
+     * it — the two character exercises simply do not offer those words.
+     */
+    val characters: List<CharacterPart> = emptyList(),
 ) {
     val primaryGloss: String? get() = glosses.firstOrNull()
 
@@ -63,6 +70,10 @@ data class WordBundle(
     /** Other words built from a character this one contains. */
     val sharesCharacterWith: List<Relation>
         get() = relations.filter { it.kind == "shares" && !it.note.isNullOrBlank() }
+
+    /** Characters worth asking about: they recur, and someone wrote a meaning. */
+    val taughtCharacters: List<CharacterPart>
+        get() = characters.filter { it.wordCount >= 2 && !it.gloss.isNullOrBlank() }
 }
 
 /**
@@ -77,6 +88,20 @@ data class Relation(
     val pinyin: String?,
     val gloss: String?,
     val note: String?,
+)
+
+/**
+ * One character of a word, as the exercise generators see it.
+ *
+ * A flattened copy of the deck's character row rather than a reference to it, so
+ * generating a question stays a pure function of the bundle it was handed.
+ */
+data class CharacterPart(
+    val hanzi: String,
+    val pinyin: String,
+    val gloss: String?,
+    val glossEn: String?,
+    val wordCount: Int,
 )
 
 data class ExampleSentence(
@@ -126,6 +151,12 @@ enum class Requirement {
 
     /** An example long enough to rebuild, carrying a translation to work from. */
     TRANSLATABLE,
+
+    /**
+     * At least one character in this word recurs elsewhere and has a meaning
+     * written for it, so the word can be asked about through its parts.
+     */
+    TAUGHT_CHARACTER,
 
     /**
      * A Chinese voice is installed on this device.
@@ -231,6 +262,15 @@ interface ExerciseType {
 interface DeckContext {
     /** Plausible wrong answers: same topic and similar length where possible. */
     fun distractorGlosses(word: WordBundle, count: Int): List<String>
+
+    /**
+     * Meanings of other characters, for the character questions.
+     *
+     * Drawn from the character table rather than from word glosses: "a large
+     * institution" and "to be lively" are the same kind of answer, where a word
+     * meaning mixed in among character meanings gives itself away by its shape.
+     */
+    fun distractorCharacterGlosses(exclude: String, count: Int): List<String>
 
     fun distractorHanzi(word: WordBundle, count: Int): List<String>
 

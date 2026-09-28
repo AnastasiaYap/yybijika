@@ -25,6 +25,13 @@ object Selectors {
         "SELECT word_id FROM word_capability WHERE sense_count > 0 " +
             "AND pinyin_verified = 1"
 
+    /** Words with a character that recurs and has a meaning written for it. */
+    private const val TAUGHT_CHARACTER =
+        "SELECT DISTINCT wc.word_id FROM word_character wc " +
+            "JOIN character ch ON ch.hanzi = wc.hanzi " +
+            "JOIN word_capability c ON c.word_id = wc.word_id AND c.sense_count > 0 " +
+            "WHERE ch.word_count >= 2 AND ch.gloss IS NOT NULL"
+
     /** Short enough to type: a set phrase is a memory test, not production. */
     private const val TYPEABLE =
         "SELECT c.word_id FROM word_capability c JOIN word w ON w.id = c.word_id " +
@@ -49,11 +56,25 @@ object Selectors {
                  GROUP BY word_id, note HAVING COUNT(*) >= 2
                )""",
 
+        // A word has a character question when one of its characters recurs
+        // elsewhere and someone wrote a meaning for it. A character used in a
+        // single word explains nothing, so it does not count.
+        "character_meaning" to TAUGHT_CHARACTER,
+
         "type_hanzi" to TYPEABLE,
         "pinyin_to_hanzi" to TYPEABLE,
         "build_sentence" to "SELECT word_id FROM word_capability WHERE builder_count > 0",
         "translate_sentence" to
             "SELECT word_id FROM word_capability WHERE translatable_count > 0",
+        // Two to four characters: one is not a word to build, and a set phrase
+        // is a spelling test rather than a question about word formation.
+        "word_building" to
+            """SELECT DISTINCT wc.word_id FROM word_character wc
+               JOIN character ch ON ch.hanzi = wc.hanzi
+               JOIN word w ON w.id = wc.word_id
+               JOIN word_capability c ON c.word_id = w.id AND c.sense_count > 0
+               WHERE ch.word_count >= 2 AND ch.gloss IS NOT NULL
+                 AND w.char_count BETWEEN 2 AND 4""",
 
         "listen_choose" to TRUSTED,
         // Tone drills need a contrast to ask about: an all-neutral reading, or
