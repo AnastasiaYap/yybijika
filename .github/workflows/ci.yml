@@ -23,7 +23,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      # The runner image already ships the Android SDK at $ANDROID_HOME.
+      # android-actions/setup-android is not just redundant here, it fails:
+      # it tries to install the long-obsolete 'tools' package.
 
       - uses: gradle/actions/setup-gradle@v4
 
