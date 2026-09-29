@@ -82,7 +82,8 @@ object Dictation : ExerciseType {
 
     override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
         if (!ctx.ttsAvailable) return null
-        val sentence = word.buildableExamples.firstOrNull() ?: return null
+        val sentence = word.rotate(word.buildableExamples, ctx.variant(word), 1)
+            ?: return null
         val solution = sentence.segments
         if (solution.size < 4) return null
         return Exercise.TileBuilder(
@@ -243,7 +244,8 @@ object TranslateSentence : ExerciseType {
     override val requires = setOf(TRANSLATABLE)
 
     override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
-        val sentence = word.translatableExamples.firstOrNull() ?: return null
+        val sentence = word.rotate(word.translatableExamples, ctx.variant(word), 2)
+            ?: return null
         val solution = sentence.segments
         if (solution.size < 4) return null
         val gloss = sentence.preferredGloss ?: return null

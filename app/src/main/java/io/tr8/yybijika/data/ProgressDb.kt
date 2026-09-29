@@ -156,6 +156,16 @@ data class Daily(
 @Dao
 interface ProgressDao {
 
+    /**
+     * How often each word has been reviewed, across every skill.
+     *
+     * One query for the whole deck rather than one per word: it is read while
+     * a session is being built, and a query per card would be 20 round trips
+     * before the first question appears.
+     */
+    @Query("SELECT wordId, SUM(box + lapses) AS n FROM mastery GROUP BY wordId")
+    suspend fun reviewCounts(): List<WordCount>
+
     @Query("SELECT * FROM mastery WHERE wordId = :wordId")
     suspend fun masteryFor(wordId: Long): List<Mastery>
 
@@ -265,6 +275,8 @@ interface ProgressDao {
 }
 
 data class SkillCount(val skill: String, val n: Int)
+
+data class WordCount(val wordId: Long, val n: Int)
 
 data class StateCount(val state: String, val n: Int)
 

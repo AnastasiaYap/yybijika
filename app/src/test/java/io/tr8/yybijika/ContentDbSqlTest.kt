@@ -134,6 +134,49 @@ class ContentDbSqlTest {
     }
 
     /**
+     * The deck used to give every word exactly two examples and every exercise
+     * the first of them. Borrowed contexts are how that was fixed without
+     * writing two thousand more sentences, so the check is that they are
+     * actually there — and that a borrowed sentence really does contain its
+     * word, since a context that does not is worse than none.
+     */
+    @Test
+    fun `words carry more than one context and every context contains its word`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        val thin = count(
+            """SELECT word_id FROM example GROUP BY word_id HAVING COUNT(*) < 2"""
+        )
+        assertEquals("every word needs at least two contexts", 0, thin)
+
+        val borrowed = count("SELECT id AS word_id FROM example WHERE source = 'borrowed'")
+        assertTrue("borrowed contexts should exist", borrowed > 300)
+
+        val wrong = count(
+            """SELECT e.id AS word_id FROM example e JOIN word w ON w.id = e.word_id
+               WHERE e.source = 'borrowed' AND instr(e.zh, w.hanzi) = 0"""
+        )
+        assertEquals("a borrowed context must contain the word it was borrowed for",
+            0, wrong)
+    }
+
+    /**
+     * A sentence borrowed for a grammar word teaches nothing — every sentence
+     * contains 不 — so those are excluded, and this is the check that the
+     * exclusion held.
+     */
+    @Test
+    fun `no context is borrowed for a grammar word`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        val grammar = count(
+            """SELECT e.id AS word_id FROM example e
+               JOIN word w ON w.id = e.word_id
+               JOIN character ch ON ch.hanzi = w.hanzi
+               WHERE e.source = 'borrowed' AND ch.is_function = 1"""
+        )
+        assertEquals(0, grammar)
+    }
+
+    /**
      * The character layer is the point of the character questions, so a deck
      * that shipped without meanings would leave both types generating nothing
      * while the Quiz screen still counted them as available.

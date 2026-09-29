@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,7 +31,13 @@ import java.util.Locale
  * for. It is also where sentences wait when there was no network to mark them.
  */
 @Composable
-fun WritingScreen(compositions: List<Composition>) {
+fun WritingScreen(
+    compositions: List<Composition>,
+    pending: Int,
+    marking: Boolean,
+    hasKey: Boolean,
+    onMarkPending: () -> Unit,
+) {
     if (compositions.isEmpty()) {
         Column(
             Modifier.fillMaxSize().padding(32.dp),
@@ -55,6 +62,30 @@ fun WritingScreen(compositions: List<Composition>) {
     val when_ = SimpleDateFormat("d MMM", Locale.getDefault())
 
     LazyColumn(Modifier.fillMaxSize()) {
+        // Sentences written without a connection wait here rather than being
+        // lost. Marking them is a button rather than something that happens on
+        // its own, because it spends API calls.
+        if (pending > 0 && hasKey) {
+            item {
+                Card(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            if (pending == 1) "One sentence is still unmarked."
+                            else "$pending sentences are still unmarked.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = onMarkPending, enabled = !marking) {
+                            Text(if (marking) "Marking…" else "Mark them now")
+                        }
+                    }
+                }
+            }
+        }
         items(compositions, key = { it.id }) { c ->
             Card(
                 Modifier

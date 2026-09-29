@@ -158,6 +158,8 @@ private fun App(vm: AppViewModel) {
     val openPassage by vm.openPassage.collectAsState()
     val writing by vm.writing.collectAsState()
     val passagePinyin by vm.passagePinyin.collectAsState()
+    val pendingWriting by vm.pendingWriting.collectAsState()
+    val markingPending by vm.markingPending.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
@@ -307,7 +309,13 @@ private fun App(vm: AppViewModel) {
                         onOpenSettings = { overlay = Overlay.SETTINGS },
                     )
 
-                    Overlay.WRITING -> WritingScreen(writing)
+                    Overlay.WRITING -> WritingScreen(
+                        compositions = writing,
+                        pending = pendingWriting,
+                        marking = markingPending,
+                        hasKey = settings.hasKey,
+                        onMarkPending = vm::markPendingWriting,
+                    )
 
                     Overlay.SETTINGS -> SettingsScreen(
                         state = settings,

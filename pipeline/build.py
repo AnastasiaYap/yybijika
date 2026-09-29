@@ -335,6 +335,63 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
                 (wid, ch, i),
             )
 
+    # --- borrowed contexts -------------------------------------------------
+    #
+    # Runs after the character table exists: the grammar-word filter below
+    # reads it, and read too early it is empty — which is how 不, 都 and 把
+    # quietly collected contexts that teach nothing.
+    #
+    # Every word in the notes has exactly two written examples, and five
+    # different exercises all reach for the first one — so a word is welded to a
+    # single sentence and the review slowly becomes about that sentence rather
+    # than the word.
+    #
+    # The deck already holds the cure. 公司 appears in 我住在公司附近。, which was
+    # written as an example of 附近; as a context for 公司 it is free, already
+    # translated, and genuinely different from its own. Matched on the
+    # segmentation rather than on substrings, so 多 does not collect every
+    # sentence containing the character.
+    function_chars = {
+        ch for ch, in conn.execute("SELECT hanzi FROM character WHERE is_function = 1")
+    }
+    pool = list(conn.execute(
+        "SELECT id, word_id, zh, pinyin, gloss, gloss_en, segments FROM example"
+    ))
+    borrowed: dict[str, list] = {}
+    for _eid, owner, zh_text, py, gloss_id, gloss_en, segs in pool:
+        for piece in dict.fromkeys((segs or "").split()):
+            wid = word_ids.get(piece)
+            # Not a headword, its own example, or a grammar word that every
+            # sentence contains and none of them teaches.
+            if wid is None or wid == owner or piece in function_chars:
+                continue
+            borrowed.setdefault(piece, []).append((zh_text, py, gloss_id, gloss_en))
+
+    borrowed_rows = 0
+    for hanzi, found in borrowed.items():
+        wid = word_ids[hanzi]
+        own = {
+            z for z, in conn.execute(
+                "SELECT zh FROM example WHERE word_id = ?", (wid,)
+            )
+        }
+        # Shortest first: a sentence borrowed from elsewhere is being read for
+        # this word, not for whatever it was written to demonstrate, and a long
+        # one buries it. Capped, because 公司 turns up in 41 and a word with
+        # forty contexts is not more varied, only slower to load.
+        picked = sorted({f for f in found if f[0] not in own}, key=lambda f: len(f[0]))
+        for zh_text, py, gloss_id, gloss_en in picked[:3]:
+            conn.execute(
+                """INSERT INTO example
+                   (word_id, zh, pinyin, gloss, gloss_en, source,
+                    contains_target, token_count, segments, segment_count)
+                   VALUES (?,?,?,?,?, 'borrowed', 1, ?, ?, ?)""",
+                (wid, zh_text, py, gloss_id, gloss_en, tokens_in(zh_text),
+                 " ".join(pieces := segment.segment(zh_text)), len(pieces)),
+            )
+            borrowed_rows += 1
+    print(f"  borrowed {borrowed_rows} contexts for {len(borrowed)} words")
+
     # Reading passages, written around words that are already in the deck.
     deck_words = set(word_ids)
     for essay in essays.ESSAYS + essays_long.LONG_ESSAYS:

@@ -183,7 +183,8 @@ object BuildSentence : ExerciseType {
     override val requires = setOf(BUILDABLE_SENTENCE)
 
     override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
-        val sentence = word.buildableExamples.firstOrNull() ?: return null
+        val sentence = word.rotate(word.buildableExamples, ctx.variant(word), 0)
+            ?: return null
         // Word tiles, not characters. Cutting 他想提高自己的水平 into nine single
         // characters asks nothing about Chinese; cutting it into 他 / 想 / 提高 /
         // 自己 / 的 / 水平 asks where the words are, which is the skill.
@@ -250,7 +251,8 @@ object TellApart : ExerciseType {
     override val requires = setOf(GLOSS, CONFUSABLE)
 
     override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
-        val sentence = word.clozeExamples.firstOrNull() ?: return null
+        val sentence = word.rotate(word.clozeExamples, ctx.variant(word), 3)
+            ?: return null
         val at = sentence.zh.indexOf(word.hanzi)
         if (at < 0) return null
         val rival = word.confusables.firstOrNull() ?: return null
@@ -287,7 +289,8 @@ object ClozeExample : ExerciseType {
     override val requires = setOf(CLOZE_EXAMPLE, DISTRACTORS_3)
 
     override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
-        val sentence = word.clozeExamples.firstOrNull() ?: return null
+        val sentence = word.rotate(word.clozeExamples, ctx.variant(word), 4)
+            ?: return null
         val at = sentence.zh.indexOf(word.hanzi)
         if (at < 0) return null
         val distractors = ctx.distractorHanzi(word, 3)

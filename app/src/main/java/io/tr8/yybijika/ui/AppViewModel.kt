@@ -196,6 +196,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * of composition entirely — and a reader that loses your place every time
      * you look a word up is worse than one with no links at all.
      */
+    private val _pendingWriting = MutableStateFlow(0)
+    val pendingWriting: StateFlow<Int> = _pendingWriting.asStateFlow()
+
+    private val _markingPending = MutableStateFlow(false)
+    val markingPending: StateFlow<Boolean> = _markingPending.asStateFlow()
+
     private val _passagePinyin = MutableStateFlow(settings.passagePinyin)
     val passagePinyin: StateFlow<Boolean> = _passagePinyin.asStateFlow()
 
@@ -395,6 +401,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadWriting() = viewModelScope.launch {
         _writing.value = repo.compositions()
+        _pendingWriting.value = repo.pendingCount()
+    }
+
+    /**
+     * Send the unmarked pile off to be marked.
+     *
+     * Explicit rather than automatic: it costs API calls, and spending them
+     * without being asked is not a decision the app gets to make.
+     */
+    fun markPendingWriting() = viewModelScope.launch {
+        _markingPending.value = true
+        repo.markPending(settings.deepseekKey, settings.glossLanguage)
+        _markingPending.value = false
+        loadWriting()
     }
 
     fun openPassage(id: Long?) { _openPassage.value = id }

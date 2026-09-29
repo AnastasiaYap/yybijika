@@ -15,6 +15,7 @@ import org.junit.Test
 private class FakeContext(
     private val distractors: Int = 5,
     override val ttsAvailable: Boolean = true,
+    private val reviews: Int = 0,
 ) : DeckContext {
     override fun distractorGlosses(word: WordBundle, count: Int) =
         List(minOf(distractors, count)) { "gloss$it" }
@@ -26,6 +27,8 @@ private class FakeContext(
         List(minOf(distractors, count)) { "meaning$it" }
 
     override fun shuffleSeed(word: WordBundle, typeId: String) = 1L
+
+    override fun variant(word: WordBundle) = reviews
 
     override val measureWords: List<String> = listOf("条", "张", "本", "件", "位")
 }
@@ -559,6 +562,73 @@ class RegistryTest {
     fun `writing is scheduled separately from production`() {
         assertEquals(io.tr8.yybijika.learn.Skill.COMPOSITION,
             io.tr8.yybijika.exercise.WriteSentence.skill)
+    }
+
+    // ----------------------------------------------------------------------
+    // Variety
+    // ----------------------------------------------------------------------
+
+    /**
+     * Five exercises used to take the first example and keep taking it, so a
+     * word was welded to one sentence for ever and the review slowly became
+     * about remembering that sentence.
+     */
+    @Test
+    fun `a word met again is met in a different sentence`() {
+        val twoContexts = word(
+            examples = listOf(
+                longExample(),
+                example(
+                    zh = "热闹的地方我不喜欢。",
+                    segments = listOf("热闹", "的", "地方", "我", "不", "喜欢"),
+                    gloss = "Tempat ramai tidak saya suka.",
+                ),
+            ),
+        )
+        val first = io.tr8.yybijika.exercise.BuildSentence
+            .generate(twoContexts, FakeContext(reviews = 0))
+            as io.tr8.yybijika.exercise.Exercise.TileBuilder
+        val later = io.tr8.yybijika.exercise.BuildSentence
+            .generate(twoContexts, FakeContext(reviews = 1))
+            as io.tr8.yybijika.exercise.Exercise.TileBuilder
+        assertTrue("the same word should come round in a different sentence",
+            first.solution != later.solution)
+    }
+
+    /**
+     * And two exercises in one session should not land on the same sentence —
+     * meeting 热闹 twice in the same clause teaches the clause.
+     */
+    @Test
+    fun `two exercise types do not use the same sentence`() {
+        val twoContexts = word(
+            examples = listOf(
+                longExample(),
+                example(
+                    zh = "热闹的地方我不喜欢。",
+                    segments = listOf("热闹", "的", "地方", "我", "不", "喜欢"),
+                    gloss = "Tempat ramai tidak saya suka.",
+                ),
+            ),
+        )
+        val ctx = FakeContext()
+        val builder = io.tr8.yybijika.exercise.BuildSentence.generate(twoContexts, ctx)
+            as io.tr8.yybijika.exercise.Exercise.TileBuilder
+        val cloze = io.tr8.yybijika.exercise.ClozeExample.generate(twoContexts, ctx)
+            as io.tr8.yybijika.exercise.Exercise.Cloze
+        assertTrue("the two should not draw the same sentence",
+            builder.solution.joinToString("") !=
+                cloze.sentenceBefore + cloze.answer + cloze.sentenceAfter)
+    }
+
+    @Test
+    fun `rotation is safe with one example and with none`() {
+        val one = word(examples = listOf(longExample()))
+        assertNotNull(io.tr8.yybijika.exercise.BuildSentence
+            .generate(one, FakeContext(reviews = 7)))
+        val none = word(examples = emptyList())
+        assertNull(io.tr8.yybijika.exercise.BuildSentence
+            .generate(none, FakeContext(reviews = 3)))
     }
 
     @Test

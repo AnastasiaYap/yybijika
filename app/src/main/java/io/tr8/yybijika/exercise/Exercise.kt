@@ -39,6 +39,18 @@ data class WordBundle(
             it.kind in setOf("near-homophone", "homophone", "synonym", "reversed")
         }
 
+    /**
+     * One of several, chosen by how often the word has come round.
+     *
+     * The salt keeps two exercise types from landing on the same sentence in the
+     * same session: meeting 合同 in the same clause twice running teaches the
+     * clause. Returns null for an empty list so callers keep their own reason
+     * for declining.
+     */
+    fun <T> rotate(options: List<T>, variant: Int, salt: Int): T? =
+        if (options.isEmpty()) null
+        else options[((variant + salt) % options.size + options.size) % options.size]
+
     /** Examples usable for a cloze: the word has to actually appear in them. */
     val clozeExamples: List<ExampleSentence>
         get() = examples.filter { it.containsTarget }
@@ -331,4 +343,14 @@ interface DeckContext {
     val ttsAvailable: Boolean
 
     fun shuffleSeed(word: WordBundle, typeId: String): Long
+
+    /**
+     * How many times this word has been reviewed.
+     *
+     * Used to rotate which example a question is built from. Without it, five
+     * different exercises all take the first sentence and keep taking it, so a
+     * word arrives welded to one context — and after enough repetitions the
+     * review is about remembering that sentence rather than knowing the word.
+     */
+    fun variant(word: WordBundle): Int
 }

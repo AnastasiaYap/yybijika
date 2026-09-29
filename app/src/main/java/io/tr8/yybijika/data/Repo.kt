@@ -43,6 +43,15 @@ class Repo(
     private val distractorCache = java.util.concurrent.ConcurrentHashMap<Long, List<WordBundle>>()
 
     /**
+     * How often each word has been reviewed, refreshed when a session is built.
+     *
+     * Drives which example a question is built from, so the same word arrives
+     * in a different sentence each time it comes round.
+     */
+    @Volatile
+    private var rotations: Map<Long, Int> = emptyMap()
+
+    /**
      * Whether a question may rely on sound.
      *
      * Two conditions, deliberately collapsed into one: the phone has a Chinese
@@ -109,6 +118,8 @@ class Repo(
 
         override fun shuffleSeed(word: WordBundle, typeId: String): Long =
             word.id * 31 + typeId.hashCode()
+
+        override fun variant(word: WordBundle): Int = rotations[word.id] ?: 0
     }
 
     private fun pool(word: WordBundle): List<WordBundle> =
@@ -229,6 +240,52 @@ class Repo(
         critique
     }
 
+    /**
+     * Mark the sentences that were written with no connection.
+     *
+     * The gap this closes: a sentence written on a plane was saved unmarked and
+     * then stayed unmarked for ever, because nothing ever went back for it. The
+     * pile is worked oldest first and stops at the first failure — if the
+     * network is down again there is no point sending the other nineteen.
+     */
+    suspend fun markPending(
+        apiKey: String,
+        language: GlossLanguage,
+        limit: Int = 20,
+    ): Int = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) return@withContext 0
+        val pending = dao.unmarkedCompositions().take(limit)
+        var done = 0
+        for (row in pending) {
+            val word = content.bundles(listOf(row.wordId)).firstOrNull()
+            val marked = runCatching {
+                DeepSeek(apiKey).check(
+                    sentence = row.text,
+                    word = row.hanzi,
+                    pinyin = word?.pinyin.orEmpty(),
+                    meaning = word?.primaryGloss.orEmpty(),
+                    usageNote = word?.usageNotes?.firstOrNull(),
+                    language = if (language == GlossLanguage.ENGLISH) "English"
+                    else "Indonesian",
+                )
+            }.getOrNull() ?: break
+
+            dao.putComposition(
+                row.copy(
+                    source = "deepseek",
+                    correct = marked.correct,
+                    corrected = marked.corrected,
+                    note = marked.note,
+                )
+            )
+            done++
+        }
+        done
+    }
+
+    suspend fun pendingCount(): Int =
+        withContext(Dispatchers.IO) { dao.unmarkedCompositions().size }
+
     /** Everything she has written, newest first. */
     suspend fun compositions(limit: Int = 200): List<Composition> =
         withContext(Dispatchers.IO) { dao.compositions(limit) }
@@ -330,6 +387,7 @@ class Repo(
         onlyType: String? = null,
     ): List<SessionItem> = withContext(Dispatchers.IO) {
         distractorCache.clear()
+        rotations = dao.reviewCounts().associate { it.wordId to it.n }
 
         val dueRows = dao.due(today(), size * 2)
         val due = dueRows.map {
