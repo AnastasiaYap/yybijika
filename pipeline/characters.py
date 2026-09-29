@@ -515,3 +515,36 @@ OVERRIDES: dict[str, tuple[str, str]] = {
     # word sense: just now
     "才": ("baru kemudian; bakat", "only then; talent"),
 }
+
+
+#: Characters that are grammar rather than vocabulary.
+#:
+#: "In 这不挺好吗, what does 不 contribute?" is not a question — you knew 不 was the
+#: negator before you owned a flashcard app, and 不 recurs in seventeen words, so
+#: a rule that picks the commonest character picks exactly these every time.
+#:
+#: They keep their cards: looking 了 up and reading what it does is useful. They
+#: are excluded only as the *target* of a character question, which is a
+#: different judgement — a card answers a question you asked, a quiz question has
+#: to be worth being asked.
+#:
+#: Content characters are kept even when they are common: 出, 进, 开, 来 and 起 are
+#: ordinary verbs, and "in 进城, what does 进 contribute" is a real question.
+FUNCTION_CHARACTERS: set[str] = set(
+    # structural particles and aspect markers
+    "的地得了着吗呢吧啊呀嘛之而于以其"
+    # negation
+    "不没无未"
+    # pronouns, demonstratives, question words
+    "我你您他她它们这那哪谁什么怎各每"
+    # numerals and quantity words used as grammar
+    "一二两三四五六七八九十百千万亿几"
+    # coverbs and prepositions
+    "在从对给把被让向往为跟与和或由比"
+    # modals and the copula
+    "是会能可要该"
+    # conjunctions and common adverbs
+    "但因就才还再又也都只很太最"
+    # bare noun suffixes
+    "子儿"
+)

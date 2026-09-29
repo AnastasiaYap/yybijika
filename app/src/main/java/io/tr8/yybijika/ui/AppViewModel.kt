@@ -13,6 +13,7 @@ import io.tr8.yybijika.data.CardState
 import io.tr8.yybijika.data.CharacterState
 import io.tr8.yybijika.data.Repo
 import io.tr8.yybijika.data.CharacterCard
+import io.tr8.yybijika.data.GlossLanguage
 import io.tr8.yybijika.data.Settings
 import io.tr8.yybijika.data.UserWord
 import io.tr8.yybijika.notes.DeepSeek
@@ -186,6 +187,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         repo.setAudioEnabled(settings.audioEnabled)
+        repo.setGlossLanguage(settings.glossLanguage)
         speaker.whenReady { available ->
             repo.setTtsAvailable(available)
             _home.update { it.copy(ttsAvailable = available) }
@@ -218,7 +220,38 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             autoCheckUpdates = settings.autoCheckUpdates,
             userWordCount = repo.userWordCount(),
             deckWords = repo.deckStats().words,
+            glossLanguage = settings.glossLanguage,
+            audioEnabled = settings.audioEnabled,
+            voiceReport = speaker.report.summary,
+            voiceWorks = speaker.available,
         )
+    }
+
+    /**
+     * Say something out loud on demand, ignoring the mute setting.
+     *
+     * The point of the button is to find out whether the phone can speak at all,
+     * so honouring mute would answer a different question.
+     */
+    fun testSound() = viewModelScope.launch {
+        speaker.speak("你好，这是中文。")
+        refreshSettings()
+    }
+
+    /**
+     * Re-check for a Chinese voice, after a trip to the system settings.
+     *
+     * An engine bound before the voice was installed keeps saying no, so the
+     * check has to be able to start over rather than be asked again.
+     */
+    fun recheckVoice() = viewModelScope.launch {
+        speaker.recheck { available ->
+            repo.setTtsAvailable(available)
+            _home.update { it.copy(ttsAvailable = available) }
+            _audio.update { it.copy(voiceInstalled = available) }
+            loadQuizSetup()
+            viewModelScope.launch { refreshSettings() }
+        }
     }
 
     // ---- quiz -------------------------------------------------------------
@@ -663,6 +696,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * muting should take them off the menu rather than leave them there to
      * produce an empty quiz.
      */
+    /**
+     * Switch the question language.
+     *
+     * Everything on screen is rebuilt rather than left to refresh on its own:
+     * a half-Indonesian, half-English session is worse than either.
+     */
+    fun setGlossLanguage(language: GlossLanguage) = viewModelScope.launch {
+        settings.glossLanguage = language
+        repo.setGlossLanguage(language)
+        refreshSettings()
+        loadCards(_cards.value.filter)
+        loadLibrary()
+        _detail.value?.let { (word, _) -> openWordByHanzi(word.hanzi) }
+    }
+
     fun setAudioEnabled(enabled: Boolean) {
         settings.audioEnabled = enabled
         repo.setAudioEnabled(enabled)

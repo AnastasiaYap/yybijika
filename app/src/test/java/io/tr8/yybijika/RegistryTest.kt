@@ -33,8 +33,8 @@ private class FakeContext(
 private fun word(
     hanzi: String = "热闹",
     characters: List<CharacterPart> = listOf(
-        CharacterPart("热", "rè", "panas", "hot", 9),
-        CharacterPart("闹", "nào", "berisik", "noisy", 4),
+        CharacterPart("热", "rè", "panas", "hot", 9, preferredGloss = "panas"),
+        CharacterPart("闹", "nào", "berisik", "noisy", 4, preferredGloss = "berisik"),
     ),
     pinyin: String = "rè nào",
     verified: Boolean = true,
@@ -77,6 +77,7 @@ private fun example(
     containsTarget = zh.contains(target),
     tokenCount = zh.count { it.code in 0x4E00..0x9FFF },
     segments = segments,
+    preferredGloss = gloss,
 )
 
 /** A sentence long enough for the tile exercises to accept it. */
@@ -348,26 +349,6 @@ class RegistryTest {
     }
 
     @Test
-    fun `odd one out marks the word that lacks the shared character`() {
-        val w = word(relations = family())
-        val ex = io.tr8.yybijika.exercise.OddOneOut.generate(w, FakeContext())
-            as io.tr8.yybijika.exercise.Exercise.MultipleChoice
-        assertEquals(4, ex.choices.size)
-        val odd = ex.choices[ex.answerIndex]
-        assertTrue("the answer must be the one without 热, got $odd", !odd.contains("热"))
-        assertTrue("the other three must all contain 热",
-            ex.choices.filter { it != odd }.all { it.contains("热") })
-    }
-
-    @Test
-    fun `odd one out needs a family of three before it will ask`() {
-        val onlyOneRelative = word(
-            relations = listOf(Relation("shares", "热情", "rè qíng", "hangat", "热")),
-        )
-        assertNull(io.tr8.yybijika.exercise.OddOneOut.generate(onlyOneRelative, FakeContext()))
-    }
-
-    @Test
     fun `dictation plays the sentence rather than showing it`() {
         val ex = io.tr8.yybijika.exercise.Dictation.generate(fullWord(), FakeContext())
             as io.tr8.yybijika.exercise.Exercise.TileBuilder
@@ -402,7 +383,7 @@ class RegistryTest {
     @Test
     fun `sentence translation needs a translation to work from`() {
         val untranslated = word(
-            examples = listOf(longExample().copy(gloss = null)),
+            examples = listOf(longExample().copy(gloss = null, preferredGloss = null)),
         )
         assertNull(
             io.tr8.yybijika.exercise.TranslateSentence.generate(untranslated, FakeContext())
@@ -439,7 +420,7 @@ class RegistryTest {
     @Test
     fun `a character used in only one word is not taught`() {
         val lonely = word(
-            characters = listOf(CharacterPart("罕", "hǎn", "jarang", "rare", 1)),
+            characters = listOf(CharacterPart("罕", "hǎn", "jarang", "rare", 1, preferredGloss = "jarang")),
         )
         assertNull(io.tr8.yybijika.exercise.CharacterMeaning.generate(lonely, FakeContext()))
         assertNull(io.tr8.yybijika.exercise.WordBuilding.generate(lonely, FakeContext()))
@@ -464,7 +445,7 @@ class RegistryTest {
     fun `word building declines words that are not built from parts`() {
         val single = word(
             hanzi = "湖",
-            characters = listOf(CharacterPart("湖", "hú", "danau", "lake", 3)),
+            characters = listOf(CharacterPart("湖", "hú", "danau", "lake", 3, preferredGloss = "danau")),
         )
         assertNull(io.tr8.yybijika.exercise.WordBuilding.generate(single, FakeContext()))
 
@@ -472,10 +453,66 @@ class RegistryTest {
             hanzi = "农林牧渔水利生产人员",
             isPhrase = true,
             characters = "农林牧渔水利生产人员".map {
-                CharacterPart(it.toString(), "x", "sesuatu", "something", 3)
+                CharacterPart(it.toString(), "x", "sesuatu", "something", 3,
+                    preferredGloss = "sesuatu")
             },
         )
         assertNull(io.tr8.yybijika.exercise.WordBuilding.generate(phrase, FakeContext()))
+    }
+
+    /**
+     * "In 内, what does 内 contribute?" answers itself. A word that is a single
+     * character has no parts to ask about.
+     */
+    @Test
+    fun `character meaning is withheld from a one-character word`() {
+        val single = word(
+            hanzi = "内",
+            characters = listOf(
+                CharacterPart("内", "nèi", "di dalam", "inside", 5,
+                    preferredGloss = "di dalam"),
+            ),
+        )
+        assertNull(io.tr8.yybijika.exercise.CharacterMeaning.generate(single, FakeContext()))
+    }
+
+    /**
+     * 不 is in seventeen words of this deck and the answer is always "not",
+     * which makes it exactly what a "commonest character wins" rule reaches for
+     * and the last character worth a question.
+     */
+    @Test
+    fun `character questions skip grammar and ask about the vocabulary`() {
+        val w = word(
+            hanzi = "不客气",
+            characters = listOf(
+                CharacterPart("不", "bù", "tidak", "not", 17, isFunction = true,
+                    preferredGloss = "tidak"),
+                CharacterPart("客", "kè", "tamu", "guest", 5,
+                    preferredGloss = "tamu"),
+                CharacterPart("气", "qì", "udara; suasana", "air; mood", 3,
+                    preferredGloss = "udara; suasana"),
+            ),
+        )
+        val ex = io.tr8.yybijika.exercise.CharacterMeaning.generate(w, FakeContext())
+            as io.tr8.yybijika.exercise.Exercise.MultipleChoice
+        // 不 is the commonest of the three and must still be passed over.
+        assertTrue("should not ask about 不, got '${ex.prompt}'", !ex.prompt.contains("不,"))
+        assertEquals("tamu", ex.choices[ex.answerIndex])
+    }
+
+    @Test
+    fun `a word made only of grammar has no character question`() {
+        val w = word(
+            hanzi = "这不",
+            characters = listOf(
+                CharacterPart("这", "zhè", "ini", "this", 4, isFunction = true,
+                    preferredGloss = "ini"),
+                CharacterPart("不", "bù", "tidak", "not", 17, isFunction = true,
+                    preferredGloss = "tidak"),
+            ),
+        )
+        assertNull(io.tr8.yybijika.exercise.CharacterMeaning.generate(w, FakeContext()))
     }
 
     @Test

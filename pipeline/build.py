@@ -319,9 +319,10 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
         reading = characters.READINGS.get(ch) or zh.read(ch).pinyin
         conn.execute(
             """INSERT INTO character (hanzi, pinyin, gloss, gloss_en,
-                                      word_count, source)
-               VALUES (?,?,?,?,?,?)""",
-            (ch, reading, gloss_id, gloss_en, count, source),
+                                      word_count, source, is_function)
+               VALUES (?,?,?,?,?,?,?)""",
+            (ch, reading, gloss_id, gloss_en, count, source,
+             int(ch in characters.FUNCTION_CHARACTERS)),
         )
 
     for hanzi, wid in word_ids.items():

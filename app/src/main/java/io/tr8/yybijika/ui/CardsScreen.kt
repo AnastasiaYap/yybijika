@@ -335,15 +335,19 @@ private fun SwipeShell(
     }
 
     Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Card(
+        // The gesture lives outside the flip, and this is not a style choice.
+        // Compose reports pointer deltas in the layer's own coordinate space,
+        // so a card rotated 180° about Y hands back a negated x: on a flipped
+        // card, swiping right read as "I don't know this". Reading the drag on
+        // an untransformed parent keeps the deltas in screen space, and the
+        // rotation below stays a purely visual thing.
+        Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     translationX = dragX.value
                     translationY = dragY.value
                     rotationZ = dragX.value / 40f
-                    rotationY = rotation
-                    cameraDistance = 12f * density.density
                 }
                 .pointerInput(key) {
                     detectDragGestures(
@@ -375,17 +379,26 @@ private fun SwipeShell(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { flipped = !flipped },
-            colors = CardDefaults.cardColors(containerColor = tint),
-            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                ) { flipped = !flipped }
         ) {
-            Box(
+            Card(
                 Modifier
                     .fillMaxSize()
-                    .graphicsLayer { if (rotation > 90f) rotationY = 180f },
-                contentAlignment = Alignment.Center,
+                    .graphicsLayer {
+                        rotationY = rotation
+                        cameraDistance = 12f * density.density
+                    },
+                colors = CardDefaults.cardColors(containerColor = tint),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
             ) {
-                if (rotation <= 90f) front() else back()
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { if (rotation > 90f) rotationY = 180f },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (rotation <= 90f) front() else back()
+                }
             }
         }
     }

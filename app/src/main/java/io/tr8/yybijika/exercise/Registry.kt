@@ -8,7 +8,6 @@ import io.tr8.yybijika.exercise.Requirement.DISTRACTORS_3
 import io.tr8.yybijika.exercise.Requirement.GLOSS
 import io.tr8.yybijika.exercise.Requirement.MEASURE
 import io.tr8.yybijika.exercise.Requirement.SEMANTIC_LINK
-import io.tr8.yybijika.exercise.Requirement.SHARED_CHARACTER
 import io.tr8.yybijika.exercise.Requirement.TAUGHT_CHARACTER
 import io.tr8.yybijika.exercise.Requirement.TRANSLATABLE
 import io.tr8.yybijika.exercise.Requirement.VERIFIED_PINYIN
@@ -38,7 +37,6 @@ object Registry {
         Dictation,
         MeasureWord,
         SemanticChoice,
-        OddOneOut,
         PinyinToHanzi,
         TranslateSentence,
         CharacterMeaning,
@@ -64,10 +62,6 @@ object Registry {
         if (word.measures.isNotEmpty()) add(MEASURE)
         if (word.semanticLinks.isNotEmpty()) add(SEMANTIC_LINK)
         if (word.taughtCharacters.isNotEmpty()) add(TAUGHT_CHARACTER)
-        // Three of a kind plus one outsider, so a family of two is not enough.
-        if (word.sharesCharacterWith.groupBy { it.note }.any { it.value.size >= 2 }) {
-            add(SHARED_CHARACTER)
-        }
     }
 
     /** Exercise types this word can actually produce right now. */
@@ -198,7 +192,7 @@ object BuildSentence : ExerciseType {
             typeId = id,
             skill = skill,
             word = word,
-            prompt = sentence.gloss ?: word.primaryGloss.orEmpty(),
+            prompt = sentence.preferredGloss ?: word.primaryGloss.orEmpty(),
             tiles = solution.shuffled(Random(ctx.shuffleSeed(word, id))),
             solution = solution,
             explanation = sentence.pinyin,
@@ -271,7 +265,7 @@ object TellApart : ExerciseType {
             answer = word.hanzi,
             choices = choices,
             answerIndex = choices.indexOf(word.hanzi),
-            gloss = sentence.gloss,
+            gloss = sentence.preferredGloss,
             // The note is the whole point: getting it right by luck teaches
             // nothing, so the reason is shown either way.
             explanation = rival.note
@@ -307,7 +301,7 @@ object ClozeExample : ExerciseType {
             answer = word.hanzi,
             choices = choices,
             answerIndex = choices.indexOf(word.hanzi),
-            gloss = sentence.gloss,
+            gloss = sentence.preferredGloss,
             explanation = sentence.pinyin,
         )
     }

@@ -22,6 +22,16 @@ import java.io.File
  */
 class ContentDb private constructor(private val db: SQLiteDatabase) {
 
+    /**
+     * The language questions are asked in.
+     *
+     * Held here rather than passed to every query because it changes rarely and
+     * applies to all of them; [Repo] sets it when the setting changes and
+     * reloads whatever is on screen.
+     */
+    @Volatile
+    var language: GlossLanguage = GlossLanguage.INDONESIAN
+
     companion object {
         private const val ASSET = "content.db"
         private const val LOCAL = "content.db"
@@ -94,10 +104,14 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         val placeholders = ids.joinToString(",") { "?" }
         val args = ids.map { it.toString() }.toTypedArray()
 
+        // Ordered so the language the learner asked for comes first, which is
+        // all "primaryGloss" means. Doing it here rather than in every
+        // generator keeps the preference out of the exercise code entirely.
         val glosses = mutableMapOf<Long, MutableList<String>>()
         db.rawQuery(
             "SELECT word_id, gloss FROM sense WHERE word_id IN ($placeholders) " +
-                "ORDER BY word_id, ordinal", args
+                "ORDER BY word_id, CASE lang WHEN ? THEN 0 ELSE 1 END, ordinal",
+            args + language.code,
         ).use { c ->
             while (c.moveToNext()) {
                 glosses.getOrPut(c.getLong(0)) { mutableListOf() }.add(c.getString(1))
@@ -128,6 +142,11 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                         glossEn = c.getString(4),
                         containsTarget = c.getInt(5) == 1,
                         tokenCount = c.getInt(6),
+                        preferredGloss = if (language == GlossLanguage.ENGLISH) {
+                            c.getString(4) ?: c.getString(3)
+                        } else {
+                            c.getString(3) ?: c.getString(4)
+                        },
                         segments = c.getString(7)
                             ?.split(" ")?.filter { it.isNotBlank() }.orEmpty(),
                     )
@@ -181,7 +200,7 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         val parts = mutableMapOf<Long, MutableList<CharacterPart>>()
         db.rawQuery(
             """SELECT wc.word_id, ch.hanzi, ch.pinyin, ch.gloss, ch.gloss_en,
-                      ch.word_count
+                      ch.word_count, ch.is_function
                FROM word_character wc JOIN character ch ON ch.hanzi = wc.hanzi
                WHERE wc.word_id IN ($placeholders)
                ORDER BY wc.word_id, wc.position""",
@@ -195,6 +214,12 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                         gloss = c.getString(3),
                         glossEn = c.getString(4),
                         wordCount = c.getInt(5),
+                        isFunction = c.getInt(6) == 1,
+                        preferredGloss = if (language == GlossLanguage.ENGLISH) {
+                            c.getString(4) ?: c.getString(3)
+                        } else {
+                            c.getString(3) ?: c.getString(4)
+                        },
                     )
                 )
             }
@@ -456,6 +481,7 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         db.rawQuery(
             """SELECT hanzi, pinyin, gloss, gloss_en, word_count FROM character
                WHERE hanzi <> ? AND gloss IS NOT NULL AND word_count >= 2
+                 AND is_function = 0
                ORDER BY RANDOM() LIMIT ?""",
             arrayOf(exclude, count.toString()),
         ).use { c ->

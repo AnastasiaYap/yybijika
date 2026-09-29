@@ -76,9 +76,32 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Send the user to the system's text-to-speech settings.
+ *
+ * Installing a Chinese voice is something only the system can do, so the honest
+ * move is to hand the user straight to the screen that does it rather than
+ * describe where it lives.
+ */
+private fun openVoiceSettings(context: android.content.Context) {
+    val intent = android.content.Intent("com.android.settings.TTS_SETTINGS")
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }.onFailure {
+        // Not every phone exposes that screen. Accessibility settings is the
+        // reliable parent of it on the skins that do not.
+        runCatching {
+            context.startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun App(vm: AppViewModel = viewModel()) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var tab by remember { mutableStateOf(Tab.HOME) }
     var overlay by remember { mutableStateOf(Overlay.NONE) }
 
@@ -104,7 +127,10 @@ private fun App(vm: AppViewModel = viewModel()) {
     val lifecycleOwner = LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) vm.recheckInstallPermission()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                vm.recheckInstallPermission()
+                vm.recheckVoice()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -246,6 +272,10 @@ private fun App(vm: AppViewModel = viewModel()) {
                         onInstallUpdate = vm::installUpdate,
                         onGrantInstallPermission = vm::grantInstallPermission,
                         onDismissUpdate = vm::dismissUpdate,
+                        onGlossLanguage = vm::setGlossLanguage,
+                        onToggleAudio = vm::setAudioEnabled,
+                        onTestSound = vm::testSound,
+                        onOpenVoiceSettings = { openVoiceSettings(context) },
                     )
 
                     Overlay.NONE -> Unit

@@ -95,3 +95,37 @@ words. Teaching the words without the characters teaches the same idea ten times
   - [x] Cards now speak themselves as they arrive when sound is on, which is
         also why the mute button had to be on that screen: unattended speech is
         the kind you want to stop immediately, not after finding Settings.
+
+
+## E — What you found using it
+
+  - [x] **Flipped cards swiped backwards.** Compose reports pointer deltas in
+        the layer's own coordinate space, and the flip rotates the card 180°
+        about Y — so on a flipped card a rightward finger arrived as a negative
+        x and "know" registered as "don't know". The drag now reads on an
+        untransformed parent; the rotation is purely visual.
+  - [x] **Character questions on one-character words.** "In 内, what does 内
+        contribute?" answers itself. A word needs at least two characters, and
+        set phrases are excluded too — 这不挺好吗 is a turn of phrase, not a
+        compound to take apart.
+  - [x] **Character questions about grammar.** The rule was "ask about the
+        character that recurs most", and what recurs most is 不, 一, 了, 子.
+        68 function characters are now flagged in the deck and skipped as
+        question targets. They keep their cards.
+  - [x] **Odd one out removed.** 附近 against 游行 / 举行 / 旅行 is answerable by
+        shape alone, without knowing a single meaning. The deck's topical tags
+        are mostly section markers, so there was no meaning-based version to
+        replace it with — better no question than one that rewards not reading.
+  - [x] **逛街 said "jalan-jalan belanja"**, which asserts the buying. It is
+        window shopping: "cuci mata, lihat-lihat di pertokoan".
+  - [x] **Distractors that were also correct.** 逛街 was offered against 旅行's
+        "bepergian, jalan-jalan" while its own gloss read "jalan-jalan belanja".
+        A wrong answer sharing a content word with the right one is now rejected.
+  - [x] **Question language is a setting.** Indonesian or English, applied to
+        the questions only — both meanings stay on every card.
+  - [x] **Sound reports what the engine actually said.** Settings names the
+        engine, whether Chinese is available, how many Chinese voices are
+        installed and what the last spoken request did, with a test button and a
+        shortcut to the system voice settings. Speech is also routed explicitly
+        to the media stream, which some engines otherwise leave on a stream the
+        phone keeps silent.

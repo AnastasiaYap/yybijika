@@ -5,7 +5,6 @@ import io.tr8.yybijika.exercise.Requirement.BUILDABLE_SENTENCE
 import io.tr8.yybijika.exercise.Requirement.GLOSS
 import io.tr8.yybijika.exercise.Requirement.MEASURE
 import io.tr8.yybijika.exercise.Requirement.SEMANTIC_LINK
-import io.tr8.yybijika.exercise.Requirement.SHARED_CHARACTER
 import io.tr8.yybijika.exercise.Requirement.TAUGHT_CHARACTER
 import io.tr8.yybijika.exercise.Requirement.TRANSLATABLE
 import io.tr8.yybijika.exercise.Requirement.VERIFIED_PINYIN
@@ -93,7 +92,7 @@ object Dictation : ExerciseType {
             tiles = solution.shuffled(Random(ctx.shuffleSeed(word, id))),
             solution = solution,
             speak = sentence.zh,
-            explanation = listOfNotNull(sentence.pinyin, sentence.gloss)
+            explanation = listOfNotNull(sentence.pinyin, sentence.preferredGloss)
                 .joinToString("  ·  "),
         )
     }
@@ -193,47 +192,6 @@ object SemanticChoice : ExerciseType {
     }
 }
 
-/**
- * Three words share a character; one does not.
- *
- * The first exercise in the deck that asks about a character rather than a word.
- * Seeing 早起, 一起 and 引起 side by side is what makes 起 stop being a shape and
- * start being a piece with a meaning — which is the whole argument for teaching
- * characters, tested before the character cards exist.
- */
-object OddOneOut : ExerciseType {
-    override val id = "odd_one_out"
-    override val skill = Skill.RECOGNITION
-    override val label = "Odd one out"
-    override val requires = setOf(SHARED_CHARACTER)
-
-    override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
-        // Group this word's shared-character links by the character they share,
-        // and take the character that connects the most words.
-        val byCharacter = word.sharesCharacterWith.groupBy { it.note!! }
-        val (character, family) = byCharacter.entries
-            .filter { it.value.size >= 2 }
-            .maxByOrNull { it.value.size } ?: return null
-
-        val kin = (listOf(word.hanzi) + family.map { it.hanzi }).distinct().take(3)
-        if (kin.size < 3) return null
-        val odd = ctx.distractorHanzi(word, 6)
-            .firstOrNull { !it.contains(character) && it !in kin } ?: return null
-
-        val choices = (kin + odd).shuffled(Random(ctx.shuffleSeed(word, id)))
-        return Exercise.MultipleChoice(
-            typeId = id,
-            skill = skill,
-            word = word,
-            prompt = "Three of these share a character. Which is the odd one out?",
-            promptPinyin = null,
-            choices = choices,
-            answerIndex = choices.indexOf(odd),
-            explanation = "${kin.joinToString("、")} all contain $character.",
-        )
-    }
-}
-
 // --------------------------------------------------------------------------
 // Production
 // --------------------------------------------------------------------------
@@ -287,7 +245,7 @@ object TranslateSentence : ExerciseType {
         val sentence = word.translatableExamples.firstOrNull() ?: return null
         val solution = sentence.segments
         if (solution.size < 4) return null
-        val gloss = sentence.gloss ?: return null
+        val gloss = sentence.preferredGloss ?: return null
 
         val decoys = ctx.distractorHanzi(word, 6)
             .filter { it !in solution }
@@ -330,12 +288,21 @@ object CharacterMeaning : ExerciseType {
 
     override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
         if (word.primaryGloss == null) return null
-        // The character that recurs the most is the one worth the question: it
-        // will pay for itself across the most other words.
+        // A one-character word is its own character, so the question becomes
+        // "in 内, what does 内 contribute?" — which answers itself and teaches
+        // nothing but a moment of irritation.
+        if (word.characters.size < 2) return null
+        // 这不挺好吗 is a turn of phrase, not a word built from parts. Picking a
+        // character out of it and asking what it contributes mistakes a sentence
+        // for a compound.
+        if (word.isPhrase) return null
+        // Among the characters that are vocabulary rather than grammar, the one
+        // that recurs the most: it pays for itself across the most other words.
         val part = word.taughtCharacters.maxByOrNull { it.wordCount } ?: return null
-        val answer = part.gloss ?: return null
-        val distractors = ctx.distractorCharacterGlosses(part.hanzi, 3)
+        val answer = part.preferredGloss ?: return null
+        val distractors = ctx.distractorCharacterGlosses(part.hanzi, 8)
             .filter { it != answer }
+            .filterNot { Overlap.collide(answer, it) }
             .distinct()
         if (distractors.size < 3) return null
         val choices = (distractors.take(3) + answer)
@@ -349,7 +316,6 @@ object CharacterMeaning : ExerciseType {
             choices = choices,
             answerIndex = choices.indexOf(answer),
             explanation = "${part.hanzi} ${part.pinyin} — $answer" +
-                (part.glossEn?.let { " · $it" } ?: "") +
                 "  ·  in ${part.wordCount} words in your deck",
         )
     }
@@ -392,7 +358,7 @@ object WordBuilding : ExerciseType {
             tiles = (solution + decoys).shuffled(Random(ctx.shuffleSeed(word, id))),
             solution = solution,
             explanation = word.taughtCharacters.joinToString("  ·  ") {
-                "${it.hanzi} ${it.pinyin} — ${it.gloss}"
+                "${it.hanzi} ${it.pinyin} — ${it.preferredGloss}"
             },
         )
     }

@@ -87,7 +87,7 @@ ENTRIES.update({
     "闹": ("berisik, berulah", "to make a racket, to act up", "别在教室里闹。", "Jangan ribut di dalam kelas."),
     "吵死了": ("berisik banget", "so noisy", "外面吵死了，我睡不着。", "Di luar berisik sekali, aku tidak bisa tidur."),
     "别闹": ("jangan berulah", "stop messing about", "别闹了，我在工作呢。", "Jangan ribut, aku lagi kerja."),
-    "逛街": ("jalan-jalan belanja", "to go shopping, to window-shop", "周末我们去逛街吧。", "Akhir pekan kita jalan-jalan belanja yuk."),
+    "逛街": ("cuci mata, lihat-lihat di pertokoan", "to window-shop, to stroll the shops", "周末我们去逛街吧。", "Akhir pekan kita cuci mata yuk."),
     "逛逛": ("lihat-lihat", "to have a look round", "我就想出去逛逛。", "Aku cuma mau keluar lihat-lihat."),
     "打扫": ("menyapu, membersihkan", "to sweep, to clean", "我们一起打扫厨房。", "Kita bersihkan dapur bersama-sama."),
     "扫码": ("scan QR", "to scan a QR code", "在这儿扫码就可以付钱。", "Di sini tinggal scan QR untuk bayar."),

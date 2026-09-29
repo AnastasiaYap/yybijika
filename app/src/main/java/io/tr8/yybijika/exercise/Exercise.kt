@@ -49,7 +49,7 @@ data class WordBundle(
 
     /** Sentences that carry a translation, so they can be asked for in reverse. */
     val translatableExamples: List<ExampleSentence>
-        get() = examples.filter { it.segmentCount >= 4 && !it.gloss.isNullOrBlank() }
+        get() = examples.filter { it.segmentCount >= 4 && !it.preferredGloss.isNullOrBlank() }
 
     /**
      * The measure word this noun takes, when the notes recorded one.
@@ -67,13 +67,18 @@ data class WordBundle(
     val semanticLinks: List<Relation>
         get() = relations.filter { it.kind == "synonym" || it.kind == "antonym" }
 
-    /** Other words built from a character this one contains. */
-    val sharesCharacterWith: List<Relation>
-        get() = relations.filter { it.kind == "shares" && !it.note.isNullOrBlank() }
-
-    /** Characters worth asking about: they recur, and someone wrote a meaning. */
+    /**
+     * Characters worth asking about.
+     *
+     * They recur, someone wrote a meaning, and they are not grammar. 不 is in
+     * seventeen words of this deck and the answer is always "not", which makes
+     * it the character a "commonest wins" rule reaches for and the last one
+     * worth a question.
+     */
     val taughtCharacters: List<CharacterPart>
-        get() = characters.filter { it.wordCount >= 2 && !it.gloss.isNullOrBlank() }
+        get() = characters.filter {
+            it.wordCount >= 2 && !it.preferredGloss.isNullOrBlank() && !it.isFunction
+        }
 }
 
 /**
@@ -102,6 +107,10 @@ data class CharacterPart(
     val gloss: String?,
     val glossEn: String?,
     val wordCount: Int,
+    /** Grammar rather than vocabulary — see pipeline/characters.py. */
+    val isFunction: Boolean = false,
+    /** The meaning in the language questions are being asked in. */
+    val preferredGloss: String? = null,
 )
 
 data class ExampleSentence(
@@ -119,6 +128,13 @@ data class ExampleSentence(
      * who recognises none of it, where 他 / 想 / 提高 / 自己 asks something real.
      */
     val segments: List<String> = emptyList(),
+    /**
+     * The translation in the language questions are being asked in.
+     *
+     * Resolved when the deck is read rather than chosen by each generator, so
+     * an exercise never has to know what the learner picked.
+     */
+    val preferredGloss: String? = null,
 ) {
     val segmentCount: Int get() = segments.size
 }
@@ -145,9 +161,6 @@ enum class Requirement {
 
     /** A hand-written synonym or antonym link. */
     SEMANTIC_LINK,
-
-    /** Two or more other words built from a character this one contains. */
-    SHARED_CHARACTER,
 
     /** An example long enough to rebuild, carrying a translation to work from. */
     TRANSLATABLE,

@@ -85,7 +85,11 @@ CREATE TABLE character (
     -- 'headword' when the notes already defined it as a word in its own right,
     -- 'written' when the meaning was written for this table. Kept so a gloss
     -- can always be traced back to whoever is answerable for it.
-    source     TEXT NOT NULL
+    source     TEXT NOT NULL,
+    -- Grammar rather than vocabulary. Such a character still gets a card, but is
+    -- never the target of a character question: asking what 不 contributes to a
+    -- word is not a question anyone needs answered.
+    is_function INTEGER NOT NULL DEFAULT 0
 );
 
 -- Which characters each word is made of, in order.

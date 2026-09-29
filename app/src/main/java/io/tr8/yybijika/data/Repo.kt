@@ -3,6 +3,7 @@ package io.tr8.yybijika.data
 import android.content.Context
 import io.tr8.yybijika.exercise.DeckContext
 import io.tr8.yybijika.exercise.ExampleSentence
+import io.tr8.yybijika.exercise.Overlap
 import io.tr8.yybijika.exercise.Registry
 import io.tr8.yybijika.exercise.Requirement
 import io.tr8.yybijika.exercise.WordBundle
@@ -56,6 +57,17 @@ class Repo(
         audioEnabled = enabled
     }
 
+    /**
+     * Ask the questions in this language from now on.
+     *
+     * Also clears the distractor cache: the wrong answers held there are glosses
+     * in the old language, and a question mixing the two would be a giveaway.
+     */
+    fun setGlossLanguage(language: GlossLanguage) {
+        content.language = language
+        distractorCache.clear()
+    }
+
     private fun today(): Long = LocalDate.now().toEpochDay()
 
     val deckContext: DeckContext = object : DeckContext {
@@ -65,12 +77,19 @@ class Repo(
         // every measure-word question asks for the same list.
         override val measureWords: List<String> by lazy { content.measureWords() }
 
-        override fun distractorGlosses(word: WordBundle, count: Int): List<String> =
-            pool(word)
+        override fun distractorGlosses(word: WordBundle, count: Int): List<String> {
+            val answer = word.primaryGloss
+            return pool(word)
                 .mapNotNull { it.primaryGloss }
-                .filter { it != word.primaryGloss }
+                .filter { it != answer }
+                // A wrong answer that shares a content word with the right one
+                // is not a wrong answer, it is a trap: 逛街 "cuci mata,
+                // lihat-lihat" against 旅行 "bepergian, jalan-jalan" used to
+                // appear together, and both read as correct.
+                .filterNot { answer != null && Overlap.collide(answer, it) }
                 .distinct()
                 .take(count)
+        }
 
         override fun distractorHanzi(word: WordBundle, count: Int): List<String> =
             pool(word)
@@ -80,7 +99,7 @@ class Repo(
                 .take(count)
 
         override fun distractorCharacterGlosses(exclude: String, count: Int): List<String> =
-            content.characterDistractors(exclude, count * 2)
+            content.characterDistractors(exclude, count * 4)
                 .mapNotNull { it.gloss }
                 .distinct()
                 .take(count)

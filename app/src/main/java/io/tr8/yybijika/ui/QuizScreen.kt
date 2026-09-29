@@ -169,7 +169,6 @@ private fun describe(id: String): String = when (id) {
     "dictation" -> "Hear a sentence, rebuild it"
     "measure_word" -> "一 __ 裤子 — which one?"
     "semantic_choice" -> "Find the synonym or the opposite"
-    "odd_one_out" -> "Three share a character, one does not"
     "pinyin_to_hanzi" -> "Read the pinyin, write the characters"
     "translate_sentence" -> "Indonesian in, Chinese out, with decoy tiles"
     "character_meaning" -> "What one character contributes to a word"

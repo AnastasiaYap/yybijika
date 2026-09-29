@@ -390,10 +390,10 @@ CARDS.update({
         "ex": [("别闹了，我在工作呢。", "Jangan ribut, aku lagi kerja.", "")],
     },
     "逛街": {
-        "id": "jalan-jalan belanja",
-        "en": "to go shopping, to window-shop",
+        "id": "cuci mata, lihat-lihat di pertokoan",
+        "en": "to window-shop, to stroll the shops",
         "note": "",
-        "ex": [("周末我们去逛街吧。", "Akhir pekan kita jalan-jalan belanja yuk.", "")],
+        "ex": [("周末我们去逛街吧。", "Akhir pekan kita cuci mata yuk.", "")],
     },
     "逛逛": {
         "id": "lihat-lihat",
@@ -7280,7 +7280,7 @@ FILL.update({
     "闹": ("Berkonotasi negatif: bikin ribut, berulah. Bandingkan 热闹 yang justru positif.", "Don't make a racket in the classroom.", ("孩子闹了一晚上。", "Anak itu rewel semalaman.", "The child played up all night.")),
     "吵死了": ("Keluhan sehari-hari. 死了 sesudah kata sifat berarti 'sampai mati' = banget.", "It's so noisy outside I can't sleep.", ("这儿吵死了，换个地方吧。", "Di sini berisik banget, pindah yuk.", "It's unbearably noisy here, let's move.")),
     "别闹": ("Perintah larangan: 别 + kata kerja. Akrab, dipakai ke teman atau anak.", "Stop messing about, I'm working.", ("别闹，我要睡觉了。", "Jangan ribut, aku mau tidur.", "Stop it, I'm going to sleep.")),
-    "逛街": ("Jalan-jalan di pertokoan, belum tentu beli. Kalau memang belanja: 买东西.", "Let's go shopping at the weekend.", ("她喜欢一个人逛街。", "Dia suka jalan-jalan belanja sendiri.", "She likes window-shopping alone.")),
+    "逛街": ("Jalan-jalan di pertokoan, belum tentu beli. Kalau memang belanja: 买东西.", "Let's stroll the shops at the weekend.", ("她喜欢一个人逛街。", "Dia suka cuci mata sendirian.", "She likes window-shopping alone.")),
     "逛逛": ("Pengulangan 逛 melunakkan nada: 'lihat-lihat saja'. Pola yang sama: 看看, 走走.", "I just want to go out and have a look round.", ("我们去公园逛逛吧。", "Ayo kita lihat-lihat ke taman.", "Let's go for a wander in the park.")),
     "打扫": ("Membersihkan ruangan. Mencuci barang adalah 洗, membersihkan noda 清理.", "Let's clean the kitchen together.", ("我每周打扫一次房间。", "Aku membersihkan kamar seminggu sekali.", "I clean my room once a week.")),
     "扫码": ("扫 (menyapu) dipakai untuk memindai. Sehari-hari di Tiongkok untuk bayar apa saja.", "You can pay by scanning the code here.", ("扫码就能看菜单。", "Scan QR langsung bisa lihat menu.", "Scan the code to see the menu.")),

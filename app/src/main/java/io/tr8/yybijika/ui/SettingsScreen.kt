@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import io.tr8.yybijika.BuildConfig
+import io.tr8.yybijika.data.GlossLanguage
 
 data class SettingsState(
     val maskedKey: String = "not set",
@@ -43,6 +45,10 @@ data class SettingsState(
     val deckWords: Int = 0,
     val checking: Boolean = false,
     val checkResult: String? = null,
+    val glossLanguage: GlossLanguage = GlossLanguage.INDONESIAN,
+    val audioEnabled: Boolean = true,
+    val voiceReport: String = "",
+    val voiceWorks: Boolean = false,
 )
 
 @Composable
@@ -59,6 +65,10 @@ fun SettingsScreen(
     onInstallUpdate: () -> Unit,
     onGrantInstallPermission: () -> Unit,
     onDismissUpdate: () -> Unit,
+    onGlossLanguage: (GlossLanguage) -> Unit,
+    onToggleAudio: (Boolean) -> Unit,
+    onTestSound: () -> Unit,
+    onOpenVoiceSettings: () -> Unit,
 ) {
     Column(
         Modifier
@@ -67,6 +77,59 @@ fun SettingsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+
+        // ---- Language -----------------------------------------------------
+        Section("Question language") {
+            Text(
+                "Every word in your deck has both meanings on its card. This is " +
+                    "only about which one the questions are asked and answered in.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlossLanguage.entries.forEach { language ->
+                    FilterChip(
+                        selected = state.glossLanguage == language,
+                        onClick = { onGlossLanguage(language) },
+                        label = { Text(language.label) },
+                    )
+                }
+            }
+        }
+
+        // ---- Sound --------------------------------------------------------
+        Section("Sound") {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Speak words and sentences",
+                    style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = state.audioEnabled, onCheckedChange = onToggleAudio)
+            }
+            Text(
+                // Everything the engine reported, verbatim. "No sound" has half
+                // a dozen causes that look identical from the outside, and only
+                // some of them are anything this app can fix.
+                state.voiceReport,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!state.voiceWorks) {
+                Text(
+                    "Chinese speech needs a voice installed on the phone itself. " +
+                        "Open the system text-to-speech settings, pick an engine " +
+                        "that supports Chinese, and install its Chinese data.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onTestSound) { Text("Test sound") }
+                OutlinedButton(onClick = onOpenVoiceSettings) { Text("Voice settings") }
+            }
+        }
 
         // ---- Updates ------------------------------------------------------
         Section("Updates") {

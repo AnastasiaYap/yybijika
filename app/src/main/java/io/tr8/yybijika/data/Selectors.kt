@@ -25,12 +25,20 @@ object Selectors {
         "SELECT word_id FROM word_capability WHERE sense_count > 0 " +
             "AND pinyin_verified = 1"
 
-    /** Words with a character that recurs and has a meaning written for it. */
+    /**
+     * Words with a character worth asking about: it recurs, it has a meaning
+     * written for it, and it is vocabulary rather than grammar.
+     *
+     * The word itself must be more than one character, or the question reduces
+     * to "in 内, what does 内 contribute?".
+     */
     private const val TAUGHT_CHARACTER =
         "SELECT DISTINCT wc.word_id FROM word_character wc " +
             "JOIN character ch ON ch.hanzi = wc.hanzi " +
+            "JOIN word w ON w.id = wc.word_id " +
             "JOIN word_capability c ON c.word_id = wc.word_id AND c.sense_count > 0 " +
-            "WHERE ch.word_count >= 2 AND ch.gloss IS NOT NULL"
+            "WHERE ch.word_count >= 2 AND ch.gloss IS NOT NULL " +
+            "AND ch.is_function = 0 AND w.char_count >= 2 AND w.is_phrase = 0"
 
     /** Short enough to type: a set phrase is a memory test, not production. */
     private const val TYPEABLE =
@@ -45,20 +53,11 @@ object Selectors {
             """SELECT DISTINCT r.word_id FROM relation r
                JOIN word_capability c ON c.word_id = r.word_id AND c.sense_count > 0
                WHERE r.kind IN ('synonym','antonym')""",
-        // Three words sharing one character, so the family needs two besides
-        // this one before an odd fourth can be added. DISTINCT because a word
-        // made of several shared characters qualifies once, not once per
-        // character — without it 1,173 words reported 1,192 available.
-        "odd_one_out" to
-            """SELECT DISTINCT word_id FROM (
-                 SELECT word_id FROM relation
-                 WHERE kind = 'shares' AND note IS NOT NULL
-                 GROUP BY word_id, note HAVING COUNT(*) >= 2
-               )""",
+
 
         // A word has a character question when one of its characters recurs
-        // elsewhere and someone wrote a meaning for it. A character used in a
-        // single word explains nothing, so it does not count.
+        // elsewhere, has a meaning written for it, and is vocabulary rather
+        // than grammar.
         "character_meaning" to TAUGHT_CHARACTER,
 
         "type_hanzi" to TYPEABLE,
@@ -74,6 +73,7 @@ object Selectors {
                JOIN word w ON w.id = wc.word_id
                JOIN word_capability c ON c.word_id = w.id AND c.sense_count > 0
                WHERE ch.word_count >= 2 AND ch.gloss IS NOT NULL
+                 AND ch.is_function = 0
                  AND w.char_count BETWEEN 2 AND 4""",
 
         "listen_choose" to TRUSTED,
