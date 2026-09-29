@@ -20,7 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import characters  # noqa: E402
 import curate  # noqa: E402
+import essay_check  # noqa: E402
 import essays  # noqa: E402
+import essays_long  # noqa: E402
 import lex  # noqa: E402
 import relations  # noqa: E402
 import segment  # noqa: E402
@@ -334,34 +336,91 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
             )
 
     # Reading passages, written around words that are already in the deck.
-    for essay in essays.ESSAYS:
-        body = "".join(line for line, _ in essay["lines"])
+    deck_words = set(word_ids)
+    for essay in essays.ESSAYS + essays_long.LONG_ESSAYS:
+        lines = essay["lines"]
+        body = "".join(line[0] for line in lines)
         translation = " · ".join(
-            [essay["title_id"]] + [gloss for _, gloss in essay["lines"]]
+            [essay["title_id"]] + [line[1] for line in lines]
         )
+
+        # What this passage asks of the reader, checked rather than asserted.
+        # A word here that is neither hers nor HSK 1-3 is a word she would have
+        # to look up, and enough of those turn reading practice into dictionary
+        # work — so the build says so instead of shipping quietly.
+        used, _total, mine = essay_check.coverage(body, deck_words, deck_words)
+        unknown = essay_check.unknown_words(body, deck_words, deck_words)
+        # A handful of new words is how reading teaches vocabulary; a page of
+        # them is how it stops being reading. Roughly one in twenty is the line.
+        # A footnote on 摸 covers the token 摸摸, and one on 摆手 covers 摆摆手:
+        # the segmenter's idea of a word and a reader's do not have to agree for
+        # the note to have done its job.
+        glossed = [n["phrase"] for n in essay.get("footnotes", [])]
+        loose = [
+            w for w in unknown
+            if not any(g in w or w in g for g in glossed)
+        ]
+        if loose:
+            share = 100 * len(loose) // max(len(unknown) + used, 1)
+            flag = "!!" if share > 5 else " ·"
+            print(f"    {flag} {essay['title']}: {len(loose)} unglossed new "
+                  f"words — {' '.join(loose)}")
+
         cur = conn.execute(
-            """INSERT INTO passage (title, level, body, translation, source)
-               VALUES (?,?,?,?, 'written')""",
-            (essay["title"], essay["level"], body, translation),
+            """INSERT INTO passage (title, title_id, title_en, level, body,
+                                    translation, summary_id, summary_en, tags,
+                                    char_count, deck_words, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'written')""",
+            (
+                essay["title"], essay["title_id"], essay.get("title_en"),
+                essay["level"], body, translation,
+                essay.get("summary_id"), essay.get("summary_en"),
+                ",".join(essay.get("tags", [])) or None,
+                len(zh.RE_HAN.findall(body)), used,
+            ),
         )
         pid = cur.lastrowid
 
-        # One token per line rather than per word: the reader shows a line at a
-        # time with its translation beneath, which is how the notes gloss too.
-        for idx, (zh_line, gloss) in enumerate(essay["lines"]):
+        for word in mine:
             conn.execute(
-                """INSERT INTO passage_token (passage_id, idx, zh, pinyin, word_id)
-                   VALUES (?,?,?,?,NULL)""",
-                (pid, idx, zh_line, zh.read_sentence(zh_line)),
+                """INSERT OR IGNORE INTO passage_word (passage_id, word_id, hanzi)
+                   VALUES (?,?,?)""",
+                (pid, word_ids[word], word),
             )
 
-        for q in essay["questions"]:
+        # One row per line rather than per word: the reader shows a line at a
+        # time with its translation beneath, which is how the notes gloss too.
+        # The line is also stored cut into words, so each one can be tapped.
+        for idx, line in enumerate(lines):
+            zh_line, gloss = line[0], line[1]
+            gloss_en = line[2] if len(line) > 2 else None
             conn.execute(
-                """INSERT INTO passage_question
-                   (passage_id, q, choices_json, answer, explain) VALUES (?,?,?,?,?)""",
-                (pid, q["q"], json.dumps(q["choices"], ensure_ascii=False),
-                 q["answer"], q.get("explain")),
+                """INSERT INTO passage_token
+                   (passage_id, idx, zh, pinyin, gloss, gloss_en, segments, word_id)
+                   VALUES (?,?,?,?,?,?,?,NULL)""",
+                (pid, idx, zh_line, zh.read_sentence(zh_line), gloss, gloss_en,
+                 "\u0000".join(segment.segment_keeping_punctuation(zh_line))),
             )
+
+        for note in essay.get("footnotes", []):
+            conn.execute(
+                """INSERT INTO passage_footnote
+                   (passage_id, phrase, pinyin, note_id, note_en, kind)
+                   VALUES (?,?,?,?,?,?)""",
+                (pid, note["phrase"], note.get("py") or zh.read_sentence(note["phrase"]),
+                 note.get("id"), note.get("en"), note.get("kind", "culture")),
+            )
+
+        for kind in ("comprehension", "vocabulary"):
+            key = "questions" if kind == "comprehension" else "vocab_questions"
+            for q in essay.get(key, []):
+                conn.execute(
+                    """INSERT INTO passage_question
+                       (passage_id, q, choices_json, answer, explain, kind)
+                       VALUES (?,?,?,?,?,?)""",
+                    (pid, q["q"], json.dumps(q["choices"], ensure_ascii=False),
+                     q["answer"], q.get("explain"), kind),
+                )
 
     for orphan in doc.orphans:
         conn.execute(

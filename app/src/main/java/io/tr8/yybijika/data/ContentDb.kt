@@ -298,8 +298,8 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
     fun passages(): List<Passage> {
         val questions = mutableMapOf<Long, MutableList<PassageQuestion>>()
         db.rawQuery(
-            "SELECT passage_id, q, choices_json, answer, explain FROM passage_question " +
-                "ORDER BY passage_id, id", null
+            "SELECT passage_id, q, choices_json, answer, explain, kind " +
+                "FROM passage_question ORDER BY passage_id, id", null
         ).use { c ->
             while (c.moveToNext()) {
                 val raw = org.json.JSONArray(c.getString(2))
@@ -309,42 +309,106 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                         choices = (0 until raw.length()).map { raw.getString(it) },
                         answer = c.getInt(3),
                         explain = c.getString(4),
+                        kind = c.getString(5),
                     )
                 )
             }
         }
 
-        val lines = mutableMapOf<Long, MutableList<Pair<String, String>>>()
+        val footnotes = mutableMapOf<Long, MutableList<Footnote>>()
         db.rawQuery(
-            "SELECT passage_id, zh, pinyin FROM passage_token ORDER BY passage_id, idx", null
+            "SELECT passage_id, phrase, pinyin, note_id, note_en, kind " +
+                "FROM passage_footnote ORDER BY passage_id, id", null
         ).use { c ->
             while (c.moveToNext()) {
-                lines.getOrPut(c.getLong(0)) { mutableListOf() }
-                    .add(c.getString(1) to c.getString(2).orEmpty())
+                footnotes.getOrPut(c.getLong(0)) { mutableListOf() }.add(
+                    Footnote(
+                        phrase = c.getString(1),
+                        pinyin = c.getString(2).orEmpty(),
+                        note = (if (language == GlossLanguage.ENGLISH) {
+                            c.getString(4) ?: c.getString(3)
+                        } else {
+                            c.getString(3) ?: c.getString(4)
+                        }).orEmpty(),
+                        kind = c.getString(5),
+                    )
+                )
+            }
+        }
+
+        val practises = mutableMapOf<Long, MutableList<String>>()
+        db.rawQuery(
+            "SELECT passage_id, hanzi FROM passage_word ORDER BY passage_id, hanzi",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                practises.getOrPut(c.getLong(0)) { mutableListOf() }.add(c.getString(1))
+            }
+        }
+
+        val lines = mutableMapOf<Long, MutableList<PassageLine>>()
+        db.rawQuery(
+            "SELECT passage_id, zh, pinyin, gloss, gloss_en, segments " +
+                "FROM passage_token ORDER BY passage_id, idx", null
+        ).use { c ->
+            while (c.moveToNext()) {
+                lines.getOrPut(c.getLong(0)) { mutableListOf() }.add(
+                    PassageLine(
+                        zh = c.getString(1),
+                        pinyin = c.getString(2).orEmpty(),
+                        gloss = (if (language == GlossLanguage.ENGLISH) {
+                            c.getString(4) ?: c.getString(3)
+                        } else {
+                            c.getString(3) ?: c.getString(4)
+                        }).orEmpty(),
+                        // NUL-separated rather than space-separated: a piece
+                        // here may be a comma or a quotation mark, and a reading
+                        // line stripped of its punctuation reads wrong.
+                        // Empty for the older short passages, written before the
+                        // segmenter existed; the reader shows those lines whole.
+                        words = c.getString(5)
+                            ?.split("\u0000")?.filter { it.isNotBlank() }.orEmpty(),
+                    )
+                )
             }
         }
 
         return db.rawQuery(
-            "SELECT id, title, level, translation FROM passage ORDER BY level, id", null
+            "SELECT id, title, title_id, title_en, level, translation, " +
+                "summary_id, summary_en, tags, char_count, deck_words " +
+                "FROM passage ORDER BY char_count, id", null
         ).use { c ->
             buildList {
                 while (c.moveToNext()) {
                     val id = c.getLong(0)
-                    // The translation is stored as one · separated string, aligned
-                    // line for line with the passage, exactly as the notes gloss.
-                    val parts = c.getString(3).orEmpty().split(" · ")
-                    val glosses = parts.drop(1)
+                    val english = language == GlossLanguage.ENGLISH
+                    // The older passages stored their translation as one
+                    // · separated string with the title first; the newer ones
+                    // carry it per line. Only the title still has to be dug out
+                    // of the old shape.
+                    val legacy = c.getString(5).orEmpty().split(" · ")
                     val zh = lines[id].orEmpty()
+                    val withGloss = if (zh.any { it.gloss.isNotBlank() }) zh
+                    else zh.mapIndexed { i, line ->
+                        line.copy(gloss = legacy.getOrNull(i + 1).orEmpty())
+                    }
                     add(
                         Passage(
                             id = id,
                             title = c.getString(1),
-                            titleId = parts.firstOrNull().orEmpty(),
-                            level = c.getInt(2),
-                            lines = zh.mapIndexed { i, (text, py) ->
-                                PassageLine(text, py, glosses.getOrElse(i) { "" })
-                            },
+                            titleId = (if (english) c.getString(3) else c.getString(2))
+                                ?: c.getString(2) ?: legacy.firstOrNull().orEmpty(),
+                            level = c.getInt(4),
+                            lines = withGloss,
                             questions = questions[id].orEmpty(),
+                            footnotes = footnotes[id].orEmpty(),
+                            practises = practises[id].orEmpty(),
+                            summary = (if (english) c.getString(7) else c.getString(6))
+                                ?: c.getString(6) ?: c.getString(7),
+                            tags = c.getString(8)
+                                ?.split(",")?.filter { it.isNotBlank() }.orEmpty(),
+                            charCount = c.getInt(9),
+                            deckWords = c.getInt(10),
                         )
                     )
                 }
@@ -571,15 +635,58 @@ data class Passage(
     val level: Int,
     val lines: List<PassageLine>,
     val questions: List<PassageQuestion>,
+    val footnotes: List<Footnote> = emptyList(),
+    /**
+     * The words from the learner's own notes that this passage uses.
+     *
+     * The reading section's whole claim, made countable — and the reason a
+     * passage is worth finishing even on a day the story is not gripping.
+     */
+    val practises: List<String> = emptyList(),
+    /** The whole passage as prose, for reading it through once at the end. */
+    val summary: String? = null,
+    val tags: List<String> = emptyList(),
+    val charCount: Int = 0,
+    val deckWords: Int = 0,
+) {
+    val comprehension: List<PassageQuestion>
+        get() = questions.filter { it.kind == "comprehension" }
+
+    val vocabulary: List<PassageQuestion>
+        get() = questions.filter { it.kind == "vocabulary" }
+
+    /** Roughly how long it takes to read, at a learner's pace. */
+    val minutes: Int get() = maxOf(1, charCount / 120)
+}
+
+data class PassageLine(
+    val zh: String,
+    val pinyin: String,
+    val gloss: String,
+    /** The line cut into words, so each one can be tapped and opened. */
+    val words: List<String> = emptyList(),
 )
 
-data class PassageLine(val zh: String, val pinyin: String, val gloss: String)
+/**
+ * A name, a dish or a turn of phrase the passage leans on.
+ *
+ * Without these a passage set somewhere real is readable word by word and still
+ * opaque: you can parse 黄牛 as "yellow ox" and learn nothing from it.
+ */
+data class Footnote(
+    val phrase: String,
+    val pinyin: String,
+    val note: String,
+    val kind: String,
+)
 
 data class PassageQuestion(
     val q: String,
     val choices: List<String>,
     val answer: Int,
     val explain: String?,
+    /** 'comprehension' — what it said; 'vocabulary' — what a word meant here. */
+    val kind: String = "comprehension",
 )
 
 /** A grammar pattern as the notes recorded it, with whatever examples sat under it. */

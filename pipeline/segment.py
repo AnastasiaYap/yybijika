@@ -87,3 +87,24 @@ def segment(sentence: str, lex: set[str] | None = None) -> list[str]:
         if han:
             out.extend(_unglue(han, known))
     return out
+
+
+def segment_keeping_punctuation(sentence: str, lex: set[str] | None = None) -> list[str]:
+    """Segment a sentence but keep its punctuation as separate pieces.
+
+    The tile exercises want punctuation gone — a full stop as a draggable tile is
+    a piece with one home. A reading passage wants the opposite: the line is
+    displayed, not assembled, and a sentence stripped of its commas reads wrong.
+    Same cuts, different treatment of what falls between them.
+    """
+    known = lex if lex is not None else _loaded
+    out: list[str] = []
+    for token in jieba.cut(sentence, cut_all=False):
+        han = "".join(ch for ch in token if RE_HAN.match(ch))
+        if han:
+            out.extend(_unglue(han, known))
+        else:
+            piece = token.strip()
+            if piece:
+                out.append(piece)
+    return out

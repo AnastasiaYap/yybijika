@@ -104,6 +104,9 @@ private fun App(vm: AppViewModel = viewModel()) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var tab by remember { mutableStateOf(Tab.HOME) }
     var overlay by remember { mutableStateOf(Overlay.NONE) }
+    // Where a word card was opened from. A word tapped inside a passage has to
+    // go back to that passage, not to the search screen it has never seen.
+    var detailFrom by remember { mutableStateOf(Overlay.BROWSE) }
 
     val home by vm.home.collectAsState()
     val session by vm.session.collectAsState()
@@ -120,6 +123,7 @@ private fun App(vm: AppViewModel = viewModel()) {
     val audio by vm.audio.collectAsState()
     val character by vm.character.collectAsState()
     val charCards by vm.charCards.collectAsState()
+    val openPassage by vm.openPassage.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
@@ -145,7 +149,7 @@ private fun App(vm: AppViewModel = viewModel()) {
                 vm.closeCharacter()
                 overlay = if (detail != null) Overlay.DETAIL else Overlay.BROWSE
             }
-            Overlay.DETAIL -> { vm.closeWord(); overlay = Overlay.BROWSE }
+            Overlay.DETAIL -> { vm.closeWord(); overlay = detailFrom }
             Overlay.NONE -> if (tab != Tab.HOME) tab = Tab.HOME
             else -> overlay = Overlay.NONE
         }
@@ -218,7 +222,11 @@ private fun App(vm: AppViewModel = viewModel()) {
                     Overlay.BROWSE -> BrowseScreen(
                         words = browse,
                         onSearch = vm::search,
-                        onOpen = { vm.openWord(it); overlay = Overlay.DETAIL },
+                        onOpen = {
+                            vm.openWord(it)
+                            detailFrom = Overlay.BROWSE
+                            overlay = Overlay.DETAIL
+                        },
                     )
 
                     Overlay.DETAIL -> detail?.let { (word, mastery) ->
@@ -327,7 +335,18 @@ private fun App(vm: AppViewModel = viewModel()) {
                     Tab.READ -> ReadScreen(
                         passages = passages,
                         patterns = patterns,
+                        openPassageId = openPassage,
+                        onOpenPassage = vm::openPassage,
                         onSpeak = vm::speak,
+                        // A word tapped in a passage opens its own card, and
+                        // Back returns to the passage rather than out of it.
+                        onOpenWord = {
+                            vm.openWordByHanzi(it)
+                            // NONE, so Back drops straight out of the word card
+                            // and onto the passage the reader is still holding.
+                            detailFrom = Overlay.NONE
+                            overlay = Overlay.DETAIL
+                        },
                     )
 
                     Tab.QUIZ -> QuizScreen(

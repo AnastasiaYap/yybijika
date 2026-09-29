@@ -129,3 +129,32 @@ words. Teaching the words without the characters teaches the same idea ten times
         shortcut to the system voice settings. Speech is also routed explicitly
         to the media stream, which some engines otherwise leave on a stream the
         phone keeps silent.
+
+## F — The reading section, properly
+
+Six passages of a hundred characters each, four questions apiece and nothing
+else. yyhsk's 263 essays average 720 characters and carry comprehension
+questions, vocabulary questions and cultural footnotes; that is the bar, and
+this deck has something yyhsk could never have — the passages can be built from
+the reader's own notes and say so.
+
+  - [x] Four new passages, 357-390 characters each against the old ~100. Each is
+        a story with a turn in it rather than a vocabulary list with full stops.
+  - [x] Comprehension questions and vocabulary questions, separately: 66
+        questions now against 24.
+  - [x] 32 footnotes for what no vocabulary list explains — what a 黄牛 actually
+        is, why 内地 is a slightly loaded word, what 越 A 越 B does.
+  - [x] Tags, character counts, reading time, and a whole-passage prose
+        translation beside the line-by-line one.
+  - [x] **Every word in a passage is tappable** and opens its own card. This is
+        the thing a paper reader cannot do and yyhsk could not do meaningfully:
+        meeting 索赔 in a sentence and being one tap from your own entry for it.
+  - [x] **"Practises N words from your notes"**, computed at build time by
+        segmenting the passage and counting. The reading section's whole claim,
+        turned into a number instead of a description.
+  - [x] `pipeline/essay_check.py` enforces the claim while the passages are
+        written: every word must be in the deck or in HSK 1-3, and the build
+        prints anything that is neither. A handful of new words per passage is
+        how reading teaches vocabulary, so it is a budget rather than a ban —
+        and each one has to be footnoted before the warning goes away.
+

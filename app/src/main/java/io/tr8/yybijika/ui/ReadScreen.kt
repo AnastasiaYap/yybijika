@@ -12,6 +12,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.tr8.yybijika.data.GrammarPattern
 import io.tr8.yybijika.data.Passage
+import io.tr8.yybijika.data.PassageLine
 import io.tr8.yybijika.ui.theme.HanziInline
 import io.tr8.yybijika.ui.theme.PinyinStyle
 
@@ -39,14 +43,16 @@ import io.tr8.yybijika.ui.theme.PinyinStyle
 fun ReadScreen(
     passages: List<Passage>,
     patterns: List<GrammarPattern>,
+    openPassageId: Long?,
     onSpeak: (String) -> Unit,
+    onOpenWord: (String) -> Unit,
+    onOpenPassage: (Long?) -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
-    var openPassage by remember { mutableStateOf<Passage?>(null) }
 
-    val passage = openPassage
+    val passage = passages.firstOrNull { it.id == openPassageId }
     if (passage != null) {
-        PassageReader(passage, onSpeak) { openPassage = null }
+        PassageReader(passage, onSpeak, onOpenWord) { onOpenPassage(null) }
         return
     }
 
@@ -64,7 +70,7 @@ fun ReadScreen(
                         Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 6.dp)
-                            .clickable { openPassage = p },
+                            .clickable { onOpenPassage(p.id) },
                     ) {
                         Column(Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -72,10 +78,19 @@ fun ReadScreen(
                             Text(p.titleId, style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
-                                "Level ${p.level} · ${p.lines.size} lines · " +
+                                "${p.charCount} characters · ${p.minutes} min · " +
                                     "${p.questions.size} questions",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            // The number that says why this one is worth
+                            // reading rather than any other text in Chinese.
+                            Text(
+                                "practises ${p.deckWords} of your words" +
+                                    if (p.tags.isEmpty()) ""
+                                    else "  ·  ${p.tags.joinToString(", ")}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
                             )
                         }
                     }
@@ -132,11 +147,16 @@ fun ReadScreen(
 private fun PassageReader(
     passage: Passage,
     onSpeak: (String) -> Unit,
+    onOpenWord: (String) -> Unit,
     onBack: () -> Unit,
 ) {
-    var showTranslation by remember { mutableStateOf(false) }
-    var quizzing by remember { mutableStateOf(false) }
-    var answers by remember { mutableStateOf(mapOf<Int, Int>()) }
+    var showTranslation by remember(passage.id) { mutableStateOf(false) }
+    var showProse by remember(passage.id) { mutableStateOf(false) }
+    var quizzing by remember(passage.id) { mutableStateOf(false) }
+    var vocabRound by remember(passage.id) { mutableStateOf(false) }
+    var answers by remember(passage.id) { mutableStateOf(mapOf<Int, Int>()) }
+
+    val questions = if (vocabRound) passage.vocabulary else passage.comprehension
 
     Column(
         Modifier
@@ -150,7 +170,7 @@ private fun PassageReader(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(passage.title, style = HanziInline)
                 Text(passage.titleId, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -159,16 +179,41 @@ private fun PassageReader(
         }
 
         if (!quizzing) {
+            // What the passage is worth, before reading it. The word count is
+            // the honest form of "built from your notes": a number the build
+            // computed, not a claim in a description.
+            Text(
+                "${passage.charCount} characters · about ${passage.minutes} min · " +
+                    "practises ${passage.deckWords} words from your notes",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+
             passage.lines.forEach { line ->
                 Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { onSpeak(line.zh) },
+                    Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Text(line.zh, style = HanziInline)
-                    Text(line.pinyin, style = PinyinStyle,
-                        color = MaterialTheme.colorScheme.primary)
+                    if (line.words.isEmpty()) {
+                        // The older short passages predate the segmenter; they
+                        // are shown whole rather than not at all.
+                        Text(
+                            line.zh,
+                            style = HanziInline,
+                            modifier = Modifier.clickable { onSpeak(line.zh) },
+                        )
+                    } else {
+                        TappableLine(line, onSpeak, onOpenWord)
+                    }
+                    Text(
+                        line.pinyin,
+                        style = PinyinStyle,
+                        color = MaterialTheme.colorScheme.primary,
+                        // Tapping the reading plays the line. The characters
+                        // above are each a link to their own card, so the row
+                        // has no room for a play button of its own.
+                        modifier = Modifier.clickable { onSpeak(line.zh) },
+                    )
                     if (showTranslation) {
                         Text(line.gloss, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -183,14 +228,60 @@ private fun PassageReader(
                 Text(if (showTranslation) "Hide translation" else "Show translation")
             }
 
-            if (passage.questions.isNotEmpty()) {
-                Button(
-                    onClick = { quizzing = true; answers = emptyMap() },
+            passage.summary?.let { prose ->
+                OutlinedButton(
+                    onClick = { showProse = !showProse },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Answer ${passage.questions.size} questions") }
+                ) {
+                    Text(if (showProse) "Hide the whole story" else "The whole story")
+                }
+                if (showProse) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Text(prose, Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+
+            if (passage.footnotes.isNotEmpty()) {
+                Text("Notes", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                passage.footnotes.forEach { note ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(note.phrase, style = HanziInline)
+                                Text(note.pinyin, style = PinyinStyle,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(note.note, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
+            if (passage.comprehension.isNotEmpty()) {
+                Button(
+                    onClick = { quizzing = true; vocabRound = false; answers = emptyMap() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Answer ${passage.comprehension.size} questions") }
+            }
+            if (passage.vocabulary.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = { quizzing = true; vocabRound = true; answers = emptyMap() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("${passage.vocabulary.size} vocabulary questions") }
             }
         } else {
-            passage.questions.forEachIndexed { qi, question ->
+            Text(
+                if (vocabRound) "What the words meant here"
+                else "What the passage said",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            questions.forEachIndexed { qi, question ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -204,13 +295,13 @@ private fun PassageReader(
                                     if (!revealed) answers = answers + (qi to ci)
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = if (!revealed) androidx.compose.material3
-                                    .ButtonDefaults.outlinedButtonColors()
-                                else androidx.compose.material3.ButtonDefaults.buttonColors(
+                                colors = if (!revealed)
+                                    ButtonDefaults.outlinedButtonColors()
+                                else ButtonDefaults.buttonColors(
                                     containerColor = when {
                                         correct -> MaterialTheme.colorScheme.primaryContainer
                                         ci == chosen -> MaterialTheme.colorScheme.errorContainer
-                                        else -> MaterialTheme.colorScheme.surface
+                                        else -> MaterialTheme.colorScheme.surfaceVariant
                                     },
                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                 ),
@@ -226,17 +317,45 @@ private fun PassageReader(
                 }
             }
 
-            val done = answers.size == passage.questions.size
-            if (done) {
-                val right = passage.questions.indices.count {
-                    answers[it] == passage.questions[it].answer
-                }
-                Text("$right of ${passage.questions.size} correct",
-                    style = MaterialTheme.typography.titleMedium)
+            if (answers.size == questions.size && questions.isNotEmpty()) {
+                val right = questions.indices.count { answers[it] == questions[it].answer }
+                Text("$right / ${questions.size}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary)
             }
-            TextButton(onClick = { quizzing = false }, modifier = Modifier.fillMaxWidth()) {
-                Text("Back to the passage")
-            }
+            OutlinedButton(
+                onClick = { quizzing = false },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Back to the passage") }
+        }
+    }
+}
+
+/**
+ * A line of the passage with every word separately tappable.
+ *
+ * This is why a reading section belongs in the app rather than on paper: meeting
+ * 索赔 inside a sentence and being one tap from your own card for it is the
+ * moment the word stops being a list entry and starts being a word.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TappableLine(
+    line: PassageLine,
+    onSpeak: (String) -> Unit,
+    onOpenWord: (String) -> Unit,
+) {
+    FlowRow(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.Center) {
+        line.words.forEach { piece ->
+            val isWord = piece.any { it.code in 0x4E00..0x9FFF }
+            Text(
+                piece,
+                style = HanziInline,
+                // Punctuation is shown but not tappable: there is no card for a
+                // comma, and a tap that does nothing reads as a broken link.
+                modifier = if (isWord) Modifier.clickable { onOpenWord(piece) }
+                else Modifier,
+            )
         }
     }
 }

@@ -138,9 +138,21 @@ CREATE TABLE orphan (
 CREATE TABLE passage (
     id          INTEGER PRIMARY KEY,
     title       TEXT NOT NULL,
+    title_id    TEXT,
+    title_en    TEXT,
     level       INTEGER NOT NULL DEFAULT 1,
     body        TEXT NOT NULL,
     translation TEXT,
+    -- The whole passage as prose in each language, for reading it as a piece
+    -- rather than a line at a time. Both are kept: line-by-line is how you
+    -- study a text, continuous prose is how you check you understood it.
+    summary_id  TEXT,
+    summary_en  TEXT,
+    tags        TEXT,                        -- comma separated, for browsing
+    char_count  INTEGER NOT NULL DEFAULT 0,
+    -- How many distinct words from the learner's own notes this passage uses.
+    -- The reading section's whole claim, made countable.
+    deck_words  INTEGER NOT NULL DEFAULT 0,
     source      TEXT NOT NULL DEFAULT 'deepseek'
 );
 
@@ -149,8 +161,35 @@ CREATE TABLE passage_token (
     idx        INTEGER NOT NULL,
     zh         TEXT NOT NULL,
     pinyin     TEXT,
+    gloss      TEXT,                         -- Indonesian, per line
+    gloss_en   TEXT,
+    -- The line cut into words, so every word in a passage can be tapped and
+    -- opened as its own card. Same segmenter as the tile exercises.
+    segments   TEXT,
     word_id    INTEGER REFERENCES word(id) ON DELETE SET NULL,
     PRIMARY KEY (passage_id, idx)
+);
+
+-- Which of the learner's own words each passage practises. Written out rather
+-- than recomputed on the phone: the segmenter it would need does not ship.
+CREATE TABLE passage_word (
+    passage_id INTEGER NOT NULL REFERENCES passage(id) ON DELETE CASCADE,
+    word_id    INTEGER NOT NULL REFERENCES word(id) ON DELETE CASCADE,
+    hanzi      TEXT NOT NULL,
+    PRIMARY KEY (passage_id, word_id)
+);
+
+-- A name, a dish, a custom or an idiom that the passage leans on and that no
+-- vocabulary list will explain. Without these a passage about Chinese life is
+-- readable word by word and still opaque.
+CREATE TABLE passage_footnote (
+    id         INTEGER PRIMARY KEY,
+    passage_id INTEGER NOT NULL REFERENCES passage(id) ON DELETE CASCADE,
+    phrase     TEXT NOT NULL,
+    pinyin     TEXT,
+    note_id    TEXT,                         -- Indonesian
+    note_en    TEXT,
+    kind       TEXT NOT NULL DEFAULT 'culture'
 );
 
 CREATE TABLE passage_question (
@@ -159,8 +198,14 @@ CREATE TABLE passage_question (
     q            TEXT NOT NULL,
     choices_json TEXT NOT NULL,
     answer       INTEGER NOT NULL,
-    explain      TEXT
+    explain      TEXT,
+    -- 'comprehension' asks what the passage said; 'vocabulary' asks what a word
+    -- in it meant here. Separated because they are different skills and a
+    -- learner who aced one may have failed the other.
+    kind         TEXT NOT NULL DEFAULT 'comprehension'
 );
+
+CREATE INDEX idx_passage_word_passage ON passage_word(passage_id);
 
 CREATE INDEX idx_sense_word ON sense(word_id);
 CREATE INDEX idx_example_word ON example(word_id);

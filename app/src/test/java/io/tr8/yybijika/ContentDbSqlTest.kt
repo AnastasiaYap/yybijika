@@ -114,6 +114,61 @@ class ContentDbSqlTest {
     }
 
     /**
+     * The reading section claims to be built from the learner's own notes. That
+     * is a number the build computes, so it can be checked rather than trusted.
+     */
+    @Test
+    fun `every passage practises words from the deck`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        val thin = count(
+            "SELECT id AS word_id FROM passage WHERE deck_words < 10"
+        )
+        assertEquals("a passage using fewer than ten of her words is not " +
+            "reading practice built from her notes", 0, thin)
+
+        val unlinked = count(
+            """SELECT p.id AS word_id FROM passage p
+               WHERE p.deck_words <> (SELECT COUNT(*) FROM passage_word pw
+                                       WHERE pw.passage_id = p.id)"""
+        )
+        assertEquals("the count and the linked words must agree", 0, unlinked)
+    }
+
+    /**
+     * A long passage with four questions is a reading exercise with a token
+     * quiz bolted on. The new ones carry both kinds.
+     */
+    @Test
+    fun `long passages carry comprehension and vocabulary questions`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        val missing = count(
+            """SELECT id AS word_id FROM passage p WHERE p.char_count > 300
+                 AND ((SELECT COUNT(*) FROM passage_question q
+                        WHERE q.passage_id = p.id AND q.kind = 'comprehension') < 5
+                   OR (SELECT COUNT(*) FROM passage_question q
+                        WHERE q.passage_id = p.id AND q.kind = 'vocabulary') < 3)"""
+        )
+        assertEquals("a long passage needs both kinds of question", 0, missing)
+    }
+
+    @Test
+    fun `passage lines are segmented and translated`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        // Only the long passages: the six short ones predate both features and
+        // the reader falls back for them deliberately.
+        val bad = count(
+            """SELECT t.rowid AS word_id FROM passage_token t
+               JOIN passage p ON p.id = t.passage_id
+               WHERE p.char_count > 300
+                 AND (t.segments IS NULL OR t.segments = ''
+                   OR t.gloss IS NULL OR t.gloss = ''
+                   OR t.gloss_en IS NULL OR t.gloss_en = '')"""
+        )
+        assertEquals("every line of a long passage needs words and both " +
+            "translations", 0, bad)
+    }
+
+    /**
      * Word tiles are the whole reason the pipeline runs a segmenter, so a deck
      * shipped without them would quietly turn every tile exercise back into a
      * character jigsaw rather than fail.

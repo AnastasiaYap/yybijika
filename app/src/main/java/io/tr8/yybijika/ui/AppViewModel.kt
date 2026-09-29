@@ -168,6 +168,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _audio = MutableStateFlow(AudioState(enabled = settings.audioEnabled))
     val audio: StateFlow<AudioState> = _audio.asStateFlow()
 
+    /**
+     * The passage currently open, if any.
+     *
+     * Held here rather than inside ReadScreen because tapping a word in a
+     * passage opens the word card as an overlay, which takes the Read tab out
+     * of composition entirely — and a reader that loses your place every time
+     * you look a word up is worse than one with no links at all.
+     */
+    private val _openPassage = MutableStateFlow<Long?>(null)
+    val openPassage: StateFlow<Long?> = _openPassage.asStateFlow()
+
     private val _deckKind = MutableStateFlow(DeckKind.WORDS)
     val deckKind: StateFlow<DeckKind> = _deckKind.asStateFlow()
 
@@ -347,6 +358,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- the character deck ----------------------------------------------
+
+    fun openPassage(id: Long?) { _openPassage.value = id }
 
     fun setDeckKind(kind: DeckKind) {
         _deckKind.value = kind
