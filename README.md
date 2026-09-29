@@ -1,11 +1,59 @@
 # 盈盈笔记卡 · Yíngyíng Bǐjìkǎ
 
-A Mandarin flashcard app built from one person's own notes.
+A Mandarin flashcard app built from your own notes, rather than from a syllabus.
 
-Where yyhsk teaches a syllabus — 13,200 words from HSK 1–9 — this teaches the
-1,260 words actually written down in `Untitled document (2) (1).pdf`. Each word
-becomes a card that can be drilled several ways, carries a separate mastery score
-per skill, and knows which exercises it cannot yet produce.
+Where a course teaches you its word list, this teaches the words *you* wrote
+down. Each one becomes a card that can be drilled seventeen different ways,
+carries a separate mastery score per skill, knows which exercises it cannot yet
+produce, and links to the characters it is built from and the words it is
+confused with.
+
+## Two decks
+
+The code here is shareable. The vocabulary in it is one person's, so it is not
+in this repository.
+
+| | applicationId | deck |
+|---|---|---|
+| **Starter** | `io.tr8.yybijika.starter` | 44 sample words, committed, in `starter/notes.txt` |
+| **Personal** | `io.tr8.yybijika` | the author's notes — not committed, not buildable here |
+
+Releases carry both APKs. They are separate applications on purpose: installing
+one replaces `content.db` wholesale, so a build carrying one deck must never be
+installable over a build carrying the other. Each build's updater matches its own
+artifact by name for the same reason.
+
+**Download `yybijika-starter-*.apk`** from the
+[releases](https://github.com/AnastasiaYap/yybijika/releases) to try it, or build
+your own deck below.
+
+## Making it yours
+
+The starter deck exists to be replaced. Put your own vocabulary in
+`starter/notes.txt` — one word per line, the meaning immediately after it, and a
+sentence on its own line becomes an example for the word above it:
+
+```
+上班masuk kerja / to go to work
+我每天八点上班。
+```
+
+Blank lines separate topics, and a bare word on its own line (`food`, `work`)
+tags everything under it. Then:
+
+```bash
+python3 -m venv .venv && ./.venv/bin/pip install pypinyin opencc-python-reimplemented jieba
+./.venv/bin/python pipeline/build.py --starter --out content/starter.db
+cp content/starter.db app/src/starter/assets/content.db
+./gradlew assembleStarterDebug
+```
+
+Everything else follows from the notes: readings, the character cards, the
+cross-references between words that sound alike, the topic tags, the segmentation
+the tile exercises use, and which of the seventeen question types each word can
+support. Nothing needs to be filled in by hand for the app to work — the hand
+written parts (corrections, extra examples, reading passages) are refinements on
+top, and the ones in `pipeline/` belong to the author's deck.
 
 ## How it fits together
 
@@ -32,8 +80,8 @@ single interval.
 ./.venv/bin/python pipeline/report.py --list no-gloss     # or unverified / flagged / orphans
 
 # Ship it
-cp content/content.db app/src/main/assets/
-./build.sh assembleRelease
+cp content/content.db app/src/personal/assets/
+./build.sh assemblePersonalRelease
 ```
 
 ## Filling the gaps

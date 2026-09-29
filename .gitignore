@@ -12,3 +12,10 @@ content/staging.db
 .venv/
 dist/
 
+# The personal deck and the notes it is built from. The app in this repository
+# is the part that is shareable; the vocabulary in it is one person's. Anyone
+# building this gets the sample deck in app/src/starter instead — see the README.
+content/notes.txt
+content/content.db
+content/starter.db
+app/src/personal/assets/content.db

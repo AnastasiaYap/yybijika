@@ -34,16 +34,40 @@ android {
         applicationId = "io.tr8.yybijika"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.17.0"
+        versionCode = 18
+        versionName = "0.18.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Where the in-app updater looks for new releases.
         buildConfigField("String", "UPDATE_REPO", "\"AnastasiaYap/yybijika\"")
 
-        // Which artifact in a release belongs to this build. A release carries
-        // both decks, and a build must never install the other one over itself.
-        buildConfigField("String", "ASSET_PREFIX", "\"YingyingBijika\"")
+        // ASSET_PREFIX is set per flavour below: which artifact in a release
+        // belongs to this build.
+    }
+
+    // Two decks, two applications.
+    //
+    // The vocabulary is the app: content.db is replaced wholesale on install,
+    // so a build carrying one deck must never be installable over a build
+    // carrying the other. Separate applicationIds make that impossible rather
+    // than merely unlikely, and each flavour knows which release artifact is
+    // its own so the updater cannot cross the streams either.
+    flavorDimensions += "deck"
+    productFlavors {
+        create("personal") {
+            dimension = "deck"
+            // app/src/personal/assets/content.db — built from private notes and
+            // not in the repository.
+            buildConfigField("String", "ASSET_PREFIX", "\"YingyingBijika\"")
+        }
+        create("starter") {
+            dimension = "deck"
+            applicationIdSuffix = ".starter"
+            versionNameSuffix = "-starter"
+            // app/src/starter/assets/content.db — the sample deck, committed,
+            // built from starter/notes.txt.
+            buildConfigField("String", "ASSET_PREFIX", "\"yybijika-starter\"")
+        }
     }
 
     buildTypes {

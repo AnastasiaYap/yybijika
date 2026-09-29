@@ -8,4 +8,4 @@ export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
 cd "$(dirname "$0")"
-./gradlew "${@:-assembleDebug}"
+./gradlew "${@:-assemblePersonalDebug}"

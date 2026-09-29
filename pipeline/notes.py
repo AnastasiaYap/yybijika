@@ -55,13 +55,20 @@ def extract(pdf: Path = DEFAULT_PDF, refresh: bool = False) -> str:
     return text
 
 
-def source_lines(pdf: Path = DEFAULT_PDF, refresh: bool = False) -> list[SourceLine]:
+def source_lines(
+    pdf: Path = DEFAULT_PDF,
+    refresh: bool = False,
+    text_file: Path | None = None,
+) -> list[SourceLine]:
     """Split the notes into lines carrying their page and line number.
 
     Blank lines are kept: a blank line is the only grouping signal in the notes,
     separating a topic cluster from the next one.
     """
-    text = extract(pdf, refresh)
+    # A plain text file bypasses the PDF entirely, which is how the starter
+    # deck is built and how anyone typing their own notes into a file can build
+    # theirs without owning the original document.
+    text = text_file.read_text(encoding="utf-8") if text_file else extract(pdf, refresh)
     lines: list[SourceLine] = []
     for page_no, page in enumerate(text.split("\f"), start=1):
         for line_no, raw in enumerate(page.split("\n"), start=1):

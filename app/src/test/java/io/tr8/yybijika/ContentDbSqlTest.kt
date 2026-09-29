@@ -24,7 +24,10 @@ import java.sql.DriverManager
  */
 class ContentDbSqlTest {
 
-    private val deck = File("src/main/assets/content.db")
+    // The personal deck. Absent for anyone who cloned this repository — it is
+    // not committed — so every test here skips rather than fails for them, and
+    // the assertions stay about the deck they were written for.
+    private val deck = File("src/personal/assets/content.db")
 
     private fun <T> query(sql: String, read: (java.sql.ResultSet) -> T): T =
         DriverManager.getConnection("jdbc:sqlite:${deck.absolutePath}").use { conn ->
@@ -36,7 +39,7 @@ class ContentDbSqlTest {
 
     @Test
     fun `every exercise type has a selector`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val registered = Registry.all.map { it.id }.toSet()
         val selected = Selectors.byType.keys
         assertEquals(
@@ -48,7 +51,7 @@ class ContentDbSqlTest {
 
     @Test
     fun `every selector runs and finds words`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         for ((id, sql) in Selectors.byType) {
             val n = count(sql)
             assertTrue("$id selects no words from the shipped deck", n > 0)
@@ -63,7 +66,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `selectors return distinct ids that exist in the word table`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         for ((id, sql) in Selectors.byType) {
             val orphaned = count(
                 "SELECT word_id FROM ($sql) s WHERE s.word_id NOT IN (SELECT id FROM word)"
@@ -88,7 +91,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `passages contain words the deck has no card for`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         // Rebuilt the way the app does it: segments split on NUL, looked up.
         val headwords = query("SELECT hanzi FROM word") { rs ->
             buildSet<String> { while (rs.next()) add(rs.getString(1)) }
@@ -121,7 +124,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `some relations point outside the deck`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val dangling = count(
             """SELECT r.rowid AS word_id FROM relation r
                WHERE NOT EXISTS (SELECT 1 FROM word w WHERE w.hanzi = r.related_hanzi)"""
@@ -142,7 +145,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `words carry more than one context and every context contains its word`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val thin = count(
             """SELECT word_id FROM example GROUP BY word_id HAVING COUNT(*) < 2"""
         )
@@ -166,7 +169,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `no context is borrowed for a grammar word`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val grammar = count(
             """SELECT e.id AS word_id FROM example e
                JOIN word w ON w.id = e.word_id
@@ -184,7 +187,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `the assumed vocabulary ships with the deck`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val n = count("SELECT hanzi AS word_id FROM assumed_known")
         assertTrue("HSK 1-3 should be about 1,300 words, got $n", n in 1000..2000)
 
@@ -205,7 +208,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `every recurring character carries a meaning in both languages`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val unglossed = count(
             """SELECT hanzi AS word_id FROM character
                WHERE word_count >= 2
@@ -217,7 +220,7 @@ class ContentDbSqlTest {
 
     @Test
     fun `every word is linked to its own characters in order`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         // A word whose character rows are missing, duplicated or out of order
         // would build the wrong answer in word_building without failing.
         val mismatched = count(
@@ -241,7 +244,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `every passage practises words from the deck`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val thin = count(
             "SELECT id AS word_id FROM passage WHERE deck_words < 10"
         )
@@ -262,7 +265,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `long passages carry comprehension and vocabulary questions`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val missing = count(
             """SELECT id AS word_id FROM passage p WHERE p.char_count > 300
                  AND ((SELECT COUNT(*) FROM passage_question q
@@ -275,7 +278,7 @@ class ContentDbSqlTest {
 
     @Test
     fun `passage lines are segmented and translated`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         // Only the long passages: the six short ones predate both features and
         // the reader falls back for them deliberately.
         val bad = count(
@@ -297,7 +300,7 @@ class ContentDbSqlTest {
      */
     @Test
     fun `sentences are segmented into words`() {
-        assumeTrue("content.db has not been built", deck.exists())
+        assumeTrue("no personal deck — see the README", deck.exists())
         val unsegmented = count(
             "SELECT id AS word_id FROM example WHERE segments IS NULL OR segments = ''"
         )

@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "starter"))
 
 import baseline  # noqa: E402
 import characters  # noqa: E402
@@ -27,6 +28,7 @@ import essays_long  # noqa: E402
 import lex  # noqa: E402
 import relations  # noqa: E402
 import segment  # noqa: E402
+import starter_essays  # noqa: E402
 import notes  # noqa: E402
 import tags  # noqa: E402
 import zh  # noqa: E402
@@ -103,7 +105,12 @@ def tokens_in(sentence: str) -> int:
     return len(zh.RE_HAN.findall(sentence))
 
 
-def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
+def build(
+    db_path: Path = DB_PATH,
+    refresh: bool = False,
+    notes_file: Path | None = None,
+    personal: bool = True,
+) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if db_path.exists():
         db_path.unlink()
@@ -111,7 +118,9 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA.read_text(encoding="utf-8"))
 
-    doc = lex.parse_document(notes.source_lines(refresh=refresh))
+    doc = lex.parse_document(
+        notes.source_lines(refresh=refresh, text_file=notes_file)
+    )
 
     # The notes are what was written; curation is what was meant. Applying it
     # before merging means a renamed headword folds into the real word's entry
@@ -121,10 +130,17 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
         raise SystemExit(
             "curation.py contradicts itself:\n  " + "\n  ".join(problems)
         )
-    entries, report = curate.apply(doc.entries)
-    print(f"  {report}")
-    for stale in report.unused:
-        print(f"    ! correction for {stale!r} matched nothing")
+    # The corrections, the hand-written cards and the reading passages are all
+    # about one person's notes: they name her words, fix her typos and were
+    # written around her vocabulary. A deck built from anybody else's notes
+    # skips them entirely rather than applying someone else's judgement to it.
+    if personal:
+        entries, report = curate.apply(doc.entries)
+        print(f"  {report}")
+        for stale in report.unused:
+            print(f"    ! correction for {stale!r} matched nothing")
+    else:
+        entries = doc.entries
 
     merged = merge_entries(entries)
     # Every headword becomes a tile the segmenter must not break apart.
@@ -398,7 +414,11 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
 
     # Reading passages, written around words that are already in the deck.
     deck_words = set(word_ids)
-    for essay in essays.ESSAYS + essays_long.LONG_ESSAYS:
+    written = (
+        essays.ESSAYS + essays_long.LONG_ESSAYS if personal
+        else starter_essays.STARTER_ESSAYS
+    )
+    for essay in written:
         lines = essay["lines"]
         body = "".join(line[0] for line in lines)
         translation = " · ".join(
@@ -498,16 +518,32 @@ def main() -> int:
     ap.add_argument("--refresh", action="store_true",
                     help="re-extract text from the source PDF")
     ap.add_argument("--out", type=Path, default=DB_PATH)
+    ap.add_argument("--notes", type=Path, default=None,
+                    help="build from a plain text notes file instead of the PDF")
+    ap.add_argument("--starter", action="store_true",
+                    help="build the sample deck: starter/notes.txt, and none of "
+                         "the personal corrections, cards or passages")
     args = ap.parse_args()
 
-    conn = build(args.out, refresh=args.refresh)
+    notes_file = args.notes
+    if args.starter and notes_file is None:
+        notes_file = REPO / "starter" / "notes.txt"
+    conn = build(
+        args.out,
+        refresh=args.refresh,
+        notes_file=notes_file,
+        personal=not args.starter,
+    )
     counts = {
         t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         for t in ("word", "sense", "usage_note", "relation", "example",
                   "pattern", "pattern_example", "tag", "passage",
                   "passage_question", "orphan")
     }
-    print(f"built {args.out.relative_to(REPO)}")
+    # An --out anywhere outside the repo is perfectly legitimate, so the path
+    # is only shortened when it happens to be inside it.
+    shown = args.out.resolve()
+    print(f"built {shown.relative_to(REPO) if shown.is_relative_to(REPO) else shown}")
     for name, n in counts.items():
         print(f"  {name:16} {n:5}")
     conn.close()

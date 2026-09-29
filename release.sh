@@ -39,6 +39,10 @@ NOTES="${NOTES:-Maintenance release.}"
 
 GRADLE="app/build.gradle.kts"
 APK="dist/YingyingBijika-${VERSION}-release.apk"
+# The sample deck, for anyone who is not the author. A different applicationId,
+# so it can never install over the personal one, and a different name, so the
+# in-app updater in each build picks its own.
+STARTER="dist/yybijika-starter-${VERSION}-release.apk"
 
 # --- checks ---------------------------------------------------------------
 
@@ -74,24 +78,29 @@ sed -i '' -E "s/versionName = \"[^\"]+\"/versionName = \"$VERSION\"/" "$GRADLE"
 
 # --- rebuild the deck so the release always ships current content ---------
 
-echo "  rebuilding content.db…"
+echo "  rebuilding both decks…"
 ./.venv/bin/python pipeline/build.py
-cp content/content.db app/src/main/assets/content.db
+cp content/content.db app/src/personal/assets/content.db
+./.venv/bin/python pipeline/build.py --starter --out content/starter.db
+cp content/starter.db app/src/starter/assets/content.db
 
 # --- test and build -------------------------------------------------------
 
 echo "  testing…"
-./gradlew testDebugUnitTest --quiet
+./gradlew testPersonalDebugUnitTest --quiet
 
 echo "  building signed release…"
-./gradlew assembleRelease --quiet
+./gradlew assemblePersonalRelease assembleStarterRelease --quiet
 
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk "$APK"
+cp app/build/outputs/apk/personal/release/app-personal-release.apk "$APK"
+cp app/build/outputs/apk/starter/release/app-starter-release.apk "$STARTER"
 
 BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/*/ | tail -1)
-"${BUILD_TOOLS}apksigner" verify "$APK" >/dev/null
-echo "  signed: $APK ($(du -h "$APK" | cut -f1))"
+for built in "$APK" "$STARTER"; do
+    "${BUILD_TOOLS}apksigner" verify "$built" >/dev/null
+    echo "  signed: $built ($(du -h "$built" | cut -f1))"
+done
 
 # --- publish --------------------------------------------------------------
 
@@ -102,7 +111,7 @@ $NOTES"
 git tag -a "v$VERSION" -m "v$VERSION"
 git push -q origin HEAD --tags
 
-gh release create "v$VERSION" "$APK" \
+gh release create "v$VERSION" "$APK" "$STARTER" \
     --title "v$VERSION" \
     --notes "$NOTES"
 

@@ -30,10 +30,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Unit tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+        # The starter flavour: its deck is committed, the personal one is not.
+        run: ./gradlew testStarterDebugUnitTest --stacktrace
 
       - name: Assemble debug
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleStarterDebug --stacktrace
 
       - name: Upload test report on failure
         if: failure()
