@@ -173,6 +173,7 @@ private fun describe(id: String): String = when (id) {
     "translate_sentence" -> "Indonesian in, Chinese out, with decoy tiles"
     "character_meaning" -> "What one character contributes to a word"
     "word_building" -> "Assemble the word from its characters"
+    "write_sentence" -> "Write a sentence of your own, and have it marked"
     else -> ""
 }
 

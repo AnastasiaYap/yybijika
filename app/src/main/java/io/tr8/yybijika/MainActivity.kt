@@ -48,6 +48,7 @@ import io.tr8.yybijika.ui.ReadScreen
 import io.tr8.yybijika.ui.SessionScreen
 import io.tr8.yybijika.ui.SettingsScreen
 import io.tr8.yybijika.ui.WordDetailScreen
+import io.tr8.yybijika.ui.WritingScreen
 import io.tr8.yybijika.ui.theme.YybijikaTheme
 
 /**
@@ -66,7 +67,8 @@ private enum class Tab(val label: String, val zh: String, val icon: ImageVector)
 }
 
 /** Screens pushed on top of a tab rather than being one. */
-private enum class Overlay { NONE, SESSION, QUIZ_RUN, BROWSE, DETAIL, CHARACTER, SETTINGS, ADD }
+private enum class Overlay { NONE, SESSION, QUIZ_RUN, BROWSE, DETAIL, CHARACTER,
+    SETTINGS, ADD, WRITING }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,6 +133,7 @@ private fun App(vm: AppViewModel) {
     val character by vm.character.collectAsState()
     val charCards by vm.charCards.collectAsState()
     val openPassage by vm.openPassage.collectAsState()
+    val writing by vm.writing.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
@@ -180,6 +183,7 @@ private fun App(vm: AppViewModel) {
                                 Overlay.BROWSE -> "Search"
                                 Overlay.DETAIL -> detail?.first?.hanzi.orEmpty()
                                 Overlay.CHARACTER -> character?.first?.hanzi.orEmpty()
+                                Overlay.WRITING -> "Your writing"
                                 Overlay.SETTINGS -> "Settings"
                                 Overlay.NONE -> ""
                             }
@@ -221,6 +225,7 @@ private fun App(vm: AppViewModel) {
                         onUndoTile = vm::undoTile,
                         onGrade = vm::grade,
                         onSpeak = vm::speak,
+                        onSubmit = vm::submitWriting,
                         onDone = { overlay = Overlay.NONE },
                         audio = audio,
                         onToggleAudio = vm::setAudioEnabled,
@@ -274,6 +279,8 @@ private fun App(vm: AppViewModel) {
                         onOpenSettings = { overlay = Overlay.SETTINGS },
                     )
 
+                    Overlay.WRITING -> WritingScreen(writing)
+
                     Overlay.SETTINGS -> SettingsScreen(
                         state = settings,
                         update = update,
@@ -306,6 +313,8 @@ private fun App(vm: AppViewModel) {
                         onBrowse = { overlay = Overlay.BROWSE },
                         onSettings = { overlay = Overlay.SETTINGS },
                         onAddNotes = { overlay = Overlay.ADD },
+                        onWriting = { vm.loadWriting(); overlay = Overlay.WRITING },
+                        writtenCount = settings.writtenCount,
                         onDownloadUpdate = vm::downloadUpdate,
                         onInstallUpdate = vm::installUpdate,
                         onGrantInstallPermission = vm::grantInstallPermission,

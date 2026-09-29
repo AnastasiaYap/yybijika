@@ -30,6 +30,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +62,7 @@ fun SessionScreen(
     onUndoTile: () -> Unit,
     onGrade: (Grade) -> Unit,
     onSpeak: (String) -> Unit,
+    onSubmit: () -> Unit,
     onDone: () -> Unit,
     audio: AudioState,
     onToggleAudio: (Boolean) -> Unit,
@@ -120,6 +125,7 @@ fun SessionScreen(
                 is Exercise.Typing -> TypingBody(ex, state, onType)
                 is Exercise.TileBuilder ->
                     BuilderBody(ex, state, onTapTile, onUndoTile, onSpeak)
+                is Exercise.Compose -> ComposeBody(ex, state, onType, onSubmit)
             }
         }
 
@@ -388,11 +394,13 @@ private fun GradeBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        if (!state.revealed) {
+        // Writing has its own Check button and no answer to reveal, so the
+        // generic one would be a second button that did the wrong thing.
+        if (!state.revealed && item.exercise !is Exercise.Compose) {
             Button(onClick = onReveal, modifier = Modifier.fillMaxWidth()) {
                 Text("Show answer")
             }
-        } else {
+        } else if (state.revealed) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GradeButton("Again", previews[Grade.AGAIN], Modifier.weight(1f)) {
                     onGrade(Grade.AGAIN)
@@ -461,5 +469,103 @@ private fun SessionDone(state: SessionState, onDone: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Button(onClick = onDone) { Text("Back") }
+    }
+}
+
+/**
+ * The writing exercise.
+ *
+ * Deliberately sparse while the box is empty: a scene, an instruction and
+ * somewhere to type. The meaning is behind a button rather than on the screen,
+ * because a sentence written while looking at the gloss is a translation, and
+ * translating is the thing this exercise exists to stop being the only skill.
+ */
+@Composable
+private fun ComposeBody(
+    ex: Exercise.Compose,
+    state: SessionState,
+    onType: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    var showHint by remember(ex.word.id) { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            ),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(ex.situation, style = HanziInline)
+                Text(ex.instruction, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        OutlinedTextField(
+            value = state.typed,
+            onValueChange = onType,
+            enabled = !state.revealed,
+            label = { Text("Your sentence") },
+            textStyle = HanziInline,
+            minLines = 3,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        if (!state.revealed) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { showHint = !showHint }) {
+                    Text(if (showHint) "Hide the meaning" else "I need the meaning")
+                }
+                Button(
+                    onClick = onSubmit,
+                    enabled = state.typed.isNotBlank() && !state.checking,
+                ) { Text(if (state.checking) "Checking…" else "Check it") }
+            }
+            if (showHint) {
+                Text(ex.hint, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        state.critique?.let { critique ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (critique.clean) {
+                        Text(
+                            "Nothing to fix.",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    critique.findings.forEach { finding ->
+                        Text(
+                            finding.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (finding.fatal) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    critique.corrected?.let {
+                        Text("Corrected", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(it, style = HanziInline,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    if (critique.source == "offline") {
+                        Text(
+                            // Saying which checks ran matters: a clean offline
+                            // pass is not the same as "your Chinese is right",
+                            // and letting it read that way would teach errors.
+                            "Checked on the phone only — grammar was not read. " +
+                                "Saved under Writing.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
     }
 }

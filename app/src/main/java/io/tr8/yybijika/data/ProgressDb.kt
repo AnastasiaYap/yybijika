@@ -120,6 +120,31 @@ data class CharacterState(
     @ColumnInfo(name = "touched_at") val touchedAt: Long = 0,
 )
 
+/**
+ * A sentence the learner wrote, and what came back.
+ *
+ * Kept rather than discarded after marking, for two reasons. The obvious one is
+ * that a year of your own sentences is the only record in the app of what you
+ * can actually say. The other is that when there is no network and no key, the
+ * app can still take the sentence, run the checks it can, and file it — writing
+ * it was most of the value, and the marking can wait.
+ */
+@Entity(tableName = "composition")
+data class Composition(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "word_id") val wordId: Long,
+    val hanzi: String,
+    val prompt: String,
+    val text: String,
+    /** 'offline' when only the mechanical checks ran, 'deepseek' when marked. */
+    val source: String = "offline",
+    /** Null when it was never marked — the pending pile. */
+    val correct: Boolean? = null,
+    val corrected: String? = null,
+    val note: String? = null,
+    @ColumnInfo(name = "written_at") val writtenAt: Long = 0,
+)
+
 @Entity(tableName = "daily")
 data class Daily(
     @PrimaryKey val date: Long,        // epoch day
@@ -223,6 +248,18 @@ interface ProgressDao {
     @Query("SELECT state, COUNT(*) AS n FROM character_state GROUP BY state")
     suspend fun characterStateCounts(): List<StateCount>
 
+    @Upsert
+    suspend fun putComposition(composition: Composition): Long
+
+    @Query("SELECT * FROM composition ORDER BY written_at DESC LIMIT :limit")
+    suspend fun compositions(limit: Int): List<Composition>
+
+    @Query("SELECT * FROM composition WHERE correct IS NULL ORDER BY written_at")
+    suspend fun unmarkedCompositions(): List<Composition>
+
+    @Query("SELECT COUNT(*) FROM composition")
+    suspend fun compositionCount(): Int
+
     @Query("SELECT COUNT(*) FROM card_state WHERE state != 'retired' AND due_at <= :today")
     suspend fun cardsDue(today: Long): Int
 }
@@ -233,8 +270,8 @@ data class StateCount(val state: String, val n: Int)
 
 @Database(
     entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class,
-                CardState::class, CharacterState::class],
-    version = 4,
+                CardState::class, CharacterState::class, Composition::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -294,6 +331,25 @@ abstract class ProgressDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS composition (
+                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                         word_id INTEGER NOT NULL,
+                         hanzi TEXT NOT NULL,
+                         prompt TEXT NOT NULL,
+                         text TEXT NOT NULL,
+                         source TEXT NOT NULL DEFAULT 'offline',
+                         correct INTEGER,
+                         corrected TEXT,
+                         note TEXT,
+                         written_at INTEGER NOT NULL DEFAULT 0
+                       )"""
+                )
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
@@ -302,7 +358,7 @@ abstract class ProgressDb : RoomDatabase() {
                 // a destructive migration would throw away the user's progress.
                 // Version 2 only adds user_word; Room handles that automatically
                 // once the migration is declared.
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 .also { instance = it }
         }

@@ -561,6 +561,27 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
             }
         }
 
+    /**
+     * Every character that appears anywhere in the deck or its examples.
+     *
+     * The vocabulary a written sentence can reasonably be built from. A
+     * character outside it is usually a typo, occasionally a word worth adding
+     * to the notes, and never something to fail a sentence over — so it is only
+     * ever reported, not enforced.
+     */
+    fun allCharacters(): Set<Char> {
+        val out = mutableSetOf<Char>()
+        for (sql in listOf("SELECT hanzi FROM word", "SELECT zh FROM example",
+                           "SELECT hanzi FROM character")) {
+            db.rawQuery(sql, null).use { c ->
+                while (c.moveToNext()) {
+                    c.getString(0).forEach { if (it.code in 0x4E00..0x9FFF) out += it }
+                }
+            }
+        }
+        return out
+    }
+
     /** Every measure word in the deck, for measure-word distractors. */
     fun measureWords(): List<String> = db.rawQuery(
         """SELECT DISTINCT related_hanzi FROM relation

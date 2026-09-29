@@ -8,6 +8,7 @@ import io.tr8.yybijika.exercise.Requirement.SEMANTIC_LINK
 import io.tr8.yybijika.exercise.Requirement.TAUGHT_CHARACTER
 import io.tr8.yybijika.exercise.Requirement.TRANSLATABLE
 import io.tr8.yybijika.exercise.Requirement.VERIFIED_PINYIN
+import io.tr8.yybijika.learn.Prompts
 import io.tr8.yybijika.learn.Skill
 import kotlin.random.Random
 
@@ -360,6 +361,52 @@ object WordBuilding : ExerciseType {
             explanation = word.taughtCharacters.joinToString("  ·  ") {
                 "${it.hanzi} ${it.pinyin} — ${it.preferredGloss}"
             },
+        )
+    }
+}
+
+// --------------------------------------------------------------------------
+// Writing
+// --------------------------------------------------------------------------
+
+/**
+ * Say something you mean, using this word.
+ *
+ * The gap this fills: after a year of the rest of the app you can recognise
+ * 1,173 words and have never written one sentence. Recognition and production
+ * do not transfer to each other on their own — reaching for 索赔 when you need
+ * it is a separate ability from spotting it on a page, and it is built only by
+ * being made to reach.
+ *
+ * Offered only for words already met. Writing with a word introduced ten
+ * seconds ago is guessing, and the session builder never introduces a new word
+ * as anything but recognition, so this takes care of itself.
+ */
+object WriteSentence : ExerciseType {
+    override val id = "write_sentence"
+    override val skill = Skill.COMPOSITION
+    override val label = "Write a sentence"
+    override val requires = setOf(GLOSS)
+
+    override fun generate(word: WordBundle, ctx: DeckContext): Exercise? {
+        val gloss = word.primaryGloss ?: return null
+        // A set phrase is already a whole sentence; asking for one around it
+        // produces padding rather than composition.
+        if (word.isPhrase) return null
+
+        return Exercise.Compose(
+            typeId = id,
+            skill = skill,
+            word = word,
+            situation = Prompts.forTags(word.tags, ctx.shuffleSeed(word, id)),
+            instruction = Prompts.instruction(listOf(word.hanzi)),
+            mustUse = listOf(word.hanzi),
+            hint = buildString {
+                append("${word.hanzi} ${word.pinyin} — $gloss")
+                word.usageNotes.firstOrNull()?.let { append("\n").append(it) }
+            },
+            examples = word.examples.map { it.zh },
+            explanation = word.usageNotes.firstOrNull(),
         )
     }
 }

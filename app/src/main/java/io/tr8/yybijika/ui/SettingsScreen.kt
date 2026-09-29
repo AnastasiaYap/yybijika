@@ -51,6 +51,7 @@ data class SettingsState(
     val newPerSession: Int = 10,
     val autoCheckUpdates: Boolean = true,
     val userWordCount: Int = 0,
+    val writtenCount: Int = 0,
     val deckWords: Int = 0,
     val checking: Boolean = false,
     val checkResult: String? = null,

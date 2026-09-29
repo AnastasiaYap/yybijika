@@ -104,7 +104,13 @@ object SessionBuilder {
         }
 
         due.sortedBy { it.dueAt }.forEach { offer(it.wordId, it.box, false) }
-        unseen.forEach { offer(it, 0, true) }
+        // You write with words you have. Composing a sentence around a word met
+        // ten seconds ago is guessing, and the feedback lands on a word with no
+        // memory to attach it to — so new words are skipped for writing and
+        // offered for everything else.
+        if (type.skill != Skill.COMPOSITION) {
+            unseen.forEach { offer(it, 0, true) }
+        }
         bundles.keys.shuffled(random).forEach { offer(it, 0, false) }
         return items
     }
@@ -140,7 +146,4 @@ object SessionBuilder {
         random: Random,
     ): List<ExerciseType> = types.shuffled(random)
 
-    /** Skills that are worth scheduling for a word, given what it can support. */
-    fun schedulableSkills(word: WordBundle, ctx: DeckContext): Set<Skill> =
-        Registry.available(word, ctx).map { it.skill }.toSet()
 }

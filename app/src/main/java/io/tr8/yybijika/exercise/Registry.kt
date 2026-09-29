@@ -41,6 +41,7 @@ object Registry {
         TranslateSentence,
         CharacterMeaning,
         WordBuilding,
+        WriteSentence,
     )
 
     private val byId = all.associateBy { it.id }

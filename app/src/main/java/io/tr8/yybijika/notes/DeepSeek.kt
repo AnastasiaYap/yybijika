@@ -34,6 +34,14 @@ class DeepSeek(private val apiKey: String) {
 
     class Failure(message: String) : Exception(message)
 
+    /** Models sometimes wrap JSON in prose or a fence; take the object. */
+    private fun extractJson(reply: String): String {
+        val start = reply.indexOf('{')
+        val end = reply.lastIndexOf('}')
+        if (start < 0 || end <= start) throw Failure("no JSON in the reply")
+        return reply.substring(start, end + 1)
+    }
+
     suspend fun fill(drafts: List<NoteParser.Draft>): List<Filled> =
         withContext(Dispatchers.IO) {
             if (drafts.isEmpty()) return@withContext emptyList()
@@ -51,6 +59,49 @@ class DeepSeek(private val apiKey: String) {
             val reply = request(PROMPT_PREFIX + asked.toString(2) + PROMPT_SUFFIX)
             parse(reply, drafts)
         }
+
+    /**
+     * Mark one written sentence.
+     *
+     * Deliberately narrow: the model is told the word, its meaning, its usage
+     * note and the sentence, and asked whether the word is used correctly *in
+     * that sense*. It is not asked to rate the writing, suggest better
+     * vocabulary, or be encouraging — a model given room to be helpful returns
+     * a paragraph of praise, and a paragraph of praise teaches nothing.
+     *
+     * One correction and one reason. Anything it cannot fit in those is
+     * something a learner at this stage would not act on anyway.
+     */
+    suspend fun check(
+        sentence: String,
+        word: String,
+        pinyin: String,
+        meaning: String,
+        usageNote: String?,
+        language: String,
+    ): Marked = withContext(Dispatchers.IO) {
+        val asked = JSONObject().apply {
+            put("word", word)
+            put("pinyin", pinyin)
+            put("meaning", meaning)
+            usageNote?.let { put("usage_note", it) }
+            put("sentence", sentence)
+            put("reply_language", language)
+        }
+        val reply = request(CHECK_PROMPT + asked.toString(2))
+        val json = JSONObject(extractJson(reply))
+        Marked(
+            correct = json.optBoolean("correct", false),
+            corrected = json.optString("corrected").takeIf { it.isNotBlank() },
+            note = json.optString("note").takeIf { it.isNotBlank() },
+        )
+    }
+
+    data class Marked(
+        val correct: Boolean,
+        val corrected: String?,
+        val note: String?,
+    )
 
     private fun request(prompt: String): String {
         val body = JSONObject().apply {
@@ -146,6 +197,22 @@ class DeepSeek(private val apiKey: String) {
     }
 
     private companion object {
+        const val CHECK_PROMPT = """You are marking one sentence written by a
+learner of Chinese. Reply with JSON only:
+
+{"correct": true|false, "corrected": "...", "note": "..."}
+
+Rules:
+- "correct" is false only if the sentence is ungrammatical, or the target word
+  is used in a sense it does not have. Awkward-but-correct is correct.
+- "corrected" is the smallest possible fix, or "" if the sentence is fine.
+- "note" is ONE sentence saying what was wrong and why, written in the
+  reply_language given below. "" if the sentence is fine.
+- Do not praise, do not suggest better vocabulary, do not add alternatives.
+
+Here is the sentence:
+"""
+
         const val API_URL = "https://api.deepseek.com/chat/completions"
         const val MODEL = "deepseek-chat"
 

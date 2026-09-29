@@ -515,6 +515,52 @@ class RegistryTest {
         assertNull(io.tr8.yybijika.exercise.CharacterMeaning.generate(w, FakeContext()))
     }
 
+    // ----------------------------------------------------------------------
+    // Writing
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `writing asks for a sentence and names the word it must contain`() {
+        val ex = io.tr8.yybijika.exercise.WriteSentence.generate(fullWord(), FakeContext())
+            as io.tr8.yybijika.exercise.Exercise.Compose
+        assertEquals(listOf("热闹"), ex.mustUse)
+        assertTrue("the instruction must name the word", ex.instruction.contains("热闹"))
+        assertTrue("there must be a situation to write about", ex.situation.isNotBlank())
+        // The examples travel with the exercise so the checker can notice one
+        // being copied back.
+        assertTrue(ex.examples.isNotEmpty())
+    }
+
+    /**
+     * The meaning is carried but not shown. A sentence written while looking at
+     * the gloss is a translation, which is the one skill the rest of the app
+     * already drills to death.
+     */
+    @Test
+    fun `writing carries the meaning as a hint rather than the prompt`() {
+        val ex = io.tr8.yybijika.exercise.WriteSentence.generate(fullWord(), FakeContext())
+            as io.tr8.yybijika.exercise.Exercise.Compose
+        assertTrue(ex.hint.contains("ramai"))
+        assertTrue("the gloss must not be in the prompt itself",
+            !ex.situation.contains("ramai") && !ex.instruction.contains("ramai"))
+    }
+
+    @Test
+    fun `a set phrase is not something to write a sentence around`() {
+        val phrase = word(hanzi = "农林牧渔水利生产人员", isPhrase = true)
+        assertNull(io.tr8.yybijika.exercise.WriteSentence.generate(phrase, FakeContext()))
+    }
+
+    /**
+     * Writing is its own skill. Filing it under Production would let a learner
+     * who can pick a word out of four options look as though she could use it.
+     */
+    @Test
+    fun `writing is scheduled separately from production`() {
+        assertEquals(io.tr8.yybijika.learn.Skill.COMPOSITION,
+            io.tr8.yybijika.exercise.WriteSentence.skill)
+    }
+
     @Test
     fun `every type has a unique id`() {
         val ids = Registry.all.map { it.id }

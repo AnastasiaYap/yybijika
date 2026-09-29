@@ -21,6 +21,8 @@ object Xp {
         Skill.LISTENING -> 2
         Skill.PRODUCTION -> 2
         Skill.USAGE -> 3
+        // The only exercise where nothing is supplied, so the most is asked.
+        Skill.COMPOSITION -> 4
     }
 
     /**

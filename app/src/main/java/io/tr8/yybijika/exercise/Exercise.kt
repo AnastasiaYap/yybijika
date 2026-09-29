@@ -237,6 +237,29 @@ sealed interface Exercise {
         override val explanation: String? = null,
     ) : Exercise
 
+    /**
+     * Write a sentence of your own.
+     *
+     * The only exercise in the app where nothing is supplied. Every other one
+     * hands over the tiles, the options or the target and asks which — this one
+     * asks what you would actually say, which is the thing none of the others
+     * ever finds out.
+     */
+    data class Compose(
+        override val typeId: String,
+        override val skill: Skill,
+        override val word: WordBundle,
+        /** The scene, so the sentence has a point rather than just a word in it. */
+        val situation: String,
+        val instruction: String,
+        val mustUse: List<String>,
+        /** The meaning and any usage note, available on request rather than shown. */
+        val hint: String,
+        /** The word's own examples — used to notice one being copied back. */
+        val examples: List<String>,
+        override val explanation: String? = null,
+    ) : Exercise
+
     data class Typing(
         override val typeId: String,
         override val skill: Skill,

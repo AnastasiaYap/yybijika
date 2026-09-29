@@ -60,6 +60,12 @@ object Selectors {
         // than grammar.
         "character_meaning" to TAUGHT_CHARACTER,
 
+        // Writing needs only a meaning to aim at. Set phrases are excluded in
+        // the generator: they are already a whole sentence.
+        "write_sentence" to
+            "SELECT c.word_id FROM word_capability c JOIN word w ON w.id = c.word_id " +
+                "WHERE c.sense_count > 0 AND w.is_phrase = 0",
+
         "type_hanzi" to TYPEABLE,
         "pinyin_to_hanzi" to TYPEABLE,
         "build_sentence" to "SELECT word_id FROM word_capability WHERE builder_count > 0",

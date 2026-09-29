@@ -2,6 +2,9 @@ package io.tr8.yybijika.data
 
 import android.content.Context
 import io.tr8.yybijika.exercise.DeckContext
+import io.tr8.yybijika.exercise.Exercise
+import io.tr8.yybijika.learn.Composer
+import io.tr8.yybijika.notes.DeepSeek
 import io.tr8.yybijika.exercise.ExampleSentence
 import io.tr8.yybijika.exercise.Overlap
 import io.tr8.yybijika.exercise.Registry
@@ -149,6 +152,100 @@ class Repo(
         tags = listOf("added"),
         relations = emptyList(),
     )
+
+    /**
+     * Mark a written sentence, and keep it either way.
+     *
+     * Two layers, and the order matters. The offline checks run first and can
+     * settle the matter on their own: a sentence missing its target word or
+     * copied from the example does not need a model to say so, and spending an
+     * API call to be told is a waste of hers.
+     *
+     * Only if it survives that does the sentence go out for real marking, and
+     * only if there is a key and a network. When there is not, the sentence is
+     * stored unmarked rather than refused — writing it was most of the value,
+     * and the marking can catch up later.
+     */
+    suspend fun mark(
+        exercise: Exercise.Compose,
+        sentence: String,
+        apiKey: String,
+        language: GlossLanguage,
+    ): Composer.Critique = withContext(Dispatchers.IO) {
+        val offline = Composer.check(
+            sentence = sentence,
+            mustUse = exercise.mustUse,
+            examples = exercise.examples,
+            known = knownCharacters(),
+        )
+
+        var critique = offline
+        if (offline.usable && apiKey.isNotBlank()) {
+            critique = runCatching {
+                val marked = DeepSeek(apiKey).check(
+                    sentence = sentence,
+                    word = exercise.word.hanzi,
+                    pinyin = exercise.word.pinyin,
+                    meaning = exercise.word.primaryGloss.orEmpty(),
+                    usageNote = exercise.word.usageNotes.firstOrNull(),
+                    language = if (language == GlossLanguage.ENGLISH) "English"
+                    else "Indonesian",
+                )
+                offline.copy(
+                    findings = offline.findings + listOfNotNull(
+                        marked.note?.let { Composer.Finding(it, fatal = false) }
+                    ),
+                    corrected = marked.corrected,
+                    note = marked.note,
+                    source = "deepseek",
+                )
+            }.getOrElse {
+                // No network, a bad key, a model having a bad day: the sentence
+                // is still hers and still saved. Saying so is better than a
+                // silent pass that looks like approval.
+                offline.copy(
+                    findings = offline.findings + Composer.Finding(
+                        "Could not reach DeepSeek, so this is unmarked for now. " +
+                            "It is saved under Writing.",
+                        fatal = false,
+                    )
+                )
+            }
+        }
+
+        dao.putComposition(
+            Composition(
+                wordId = exercise.word.id,
+                hanzi = exercise.word.hanzi,
+                prompt = exercise.situation,
+                text = sentence.trim(),
+                source = critique.source,
+                correct = if (critique.source == "deepseek") critique.clean else null,
+                corrected = critique.corrected,
+                note = critique.note,
+                writtenAt = System.currentTimeMillis(),
+            )
+        )
+        critique
+    }
+
+    /** Everything she has written, newest first. */
+    suspend fun compositions(limit: Int = 200): List<Composition> =
+        withContext(Dispatchers.IO) { dao.compositions(limit) }
+
+    suspend fun compositionCount(): Int =
+        withContext(Dispatchers.IO) { dao.compositionCount() }
+
+    /**
+     * Every character the deck or its examples contain.
+     *
+     * Used only to point out characters that appear in neither, which is nearly
+     * always a typo. Cached: it is a scan of the whole deck and it never
+     * changes between releases.
+     */
+    private val knownChars: Set<Char> by lazy { content.allCharacters() }
+
+    private fun knownCharacters(): Set<Char> = knownChars
 
     /** A character card, with every word of yours that is built from it. */
     suspend fun character(hanzi: String): Pair<CharacterCard, List<Triple<Long, String, String?>>>? =

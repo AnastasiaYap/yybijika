@@ -10,6 +10,7 @@ import io.tr8.yybijika.data.Mastery
 import io.tr8.yybijika.data.GrammarPattern
 import io.tr8.yybijika.data.Passage
 import io.tr8.yybijika.data.CardState
+import io.tr8.yybijika.data.Composition
 import io.tr8.yybijika.data.CharacterState
 import io.tr8.yybijika.data.Repo
 import io.tr8.yybijika.data.CharacterCard
@@ -21,7 +22,9 @@ import io.tr8.yybijika.data.UserWord
 import io.tr8.yybijika.notes.DeepSeek
 import io.tr8.yybijika.notes.NoteParser
 import io.tr8.yybijika.exercise.WordBundle
+import io.tr8.yybijika.exercise.Exercise
 import io.tr8.yybijika.learn.CardDeck
+import io.tr8.yybijika.learn.Composer
 import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
@@ -106,6 +109,9 @@ data class SessionState(
     val typed: String = "",
     val assembled: List<Int> = emptyList(),
     val combo: Int = 0,
+    /** A written sentence is away being marked; the button says so. */
+    val checking: Boolean = false,
+    val critique: Composer.Critique? = null,
     val earned: Int = 0,
     val correct: Int = 0,
     val finished: Boolean = false,
@@ -190,6 +196,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * of composition entirely — and a reader that loses your place every time
      * you look a word up is worse than one with no links at all.
      */
+    private val _writing = MutableStateFlow<List<Composition>>(emptyList())
+    val writing: StateFlow<List<Composition>> = _writing.asStateFlow()
+
     private val _openPassage = MutableStateFlow<Long?>(null)
     val openPassage: StateFlow<Long?> = _openPassage.asStateFlow()
 
@@ -244,6 +253,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             newPerSession = settings.newPerSession,
             autoCheckUpdates = settings.autoCheckUpdates,
             userWordCount = repo.userWordCount(),
+            writtenCount = repo.compositionCount(),
             deckWords = repo.deckStats().words,
             glossLanguage = settings.glossLanguage,
             audioEnabled = settings.audioEnabled,
@@ -374,6 +384,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- the character deck ----------------------------------------------
+
+    fun loadWriting() = viewModelScope.launch {
+        _writing.value = repo.compositions()
+    }
 
     fun openPassage(id: Long?) { _openPassage.value = id }
 
@@ -669,6 +683,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun type(text: String) = _session.update { it.copy(typed = text) }
 
+    /**
+     * Send a written sentence to be marked.
+     *
+     * Revealing only once the answer is back, so the grade buttons cannot be
+     * pressed before the feedback they are a response to has arrived.
+     */
+    fun submitWriting() = viewModelScope.launch {
+        val state = _session.value
+        val ex = state.current?.exercise as? Exercise.Compose ?: return@launch
+        if (state.typed.isBlank() || state.checking) return@launch
+
+        _session.update { it.copy(checking = true) }
+        val critique = repo.mark(ex, state.typed, settings.deepseekKey, settings.glossLanguage)
+        _session.update {
+            it.copy(checking = false, critique = critique, revealed = true)
+        }
+        loadWriting()
+        // The Home button carries the count, and a count that only updates on
+        // the next launch makes a sentence you just wrote look unsaved.
+        refreshSettings()
+    }
+
     fun tapTile(index: Int) = _session.update {
         if (it.revealed || index in it.assembled) it
         else it.copy(assembled = it.assembled + index)
@@ -691,6 +727,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             revealed = false,
             chosen = null,
             typed = "",
+            checking = false,
+            critique = null,
             assembled = emptyList(),
             combo = combo,
             earned = state.earned + points,

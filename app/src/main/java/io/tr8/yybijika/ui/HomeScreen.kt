@@ -35,6 +35,8 @@ fun HomeScreen(
     onBrowse: () -> Unit,
     onSettings: () -> Unit,
     onAddNotes: () -> Unit,
+    onWriting: () -> Unit,
+    writtenCount: Int = 0,
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: () -> Unit,
     onGrantInstallPermission: () -> Unit,
@@ -125,6 +127,13 @@ fun HomeScreen(
         OutlinedButton(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
             Text("Search the deck")
         }
+        OutlinedButton(onClick = onWriting, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                if (writtenCount == 0) "Your writing"
+                else "Your writing  ·  $writtenCount"
+            )
+        }
+
         OutlinedButton(onClick = onAddNotes, modifier = Modifier.fillMaxWidth()) {
             Text("Add notes")
         }
