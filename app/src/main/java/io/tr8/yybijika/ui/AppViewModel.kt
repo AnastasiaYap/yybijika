@@ -14,6 +14,8 @@ import io.tr8.yybijika.data.CharacterState
 import io.tr8.yybijika.data.Repo
 import io.tr8.yybijika.data.CharacterCard
 import io.tr8.yybijika.data.GlossLanguage
+import io.tr8.yybijika.ui.theme.Palette
+import io.tr8.yybijika.ui.theme.ThemeMode
 import io.tr8.yybijika.data.Settings
 import io.tr8.yybijika.data.UserWord
 import io.tr8.yybijika.notes.DeepSeek
@@ -120,6 +122,9 @@ data class SessionState(
  * learner did and can undo from the toggle; no voice installed is something only
  * the system settings can fix, and a toggle that does nothing would be a lie.
  */
+/** The palette, and whether it follows the phone. */
+data class ThemeChoice(val palette: Palette, val mode: ThemeMode)
+
 data class AudioState(
     val voiceInstalled: Boolean = false,
     val enabled: Boolean = true,
@@ -164,6 +169,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _quiz = MutableStateFlow(QuizSetup())
     val quiz: StateFlow<QuizSetup> = _quiz.asStateFlow()
+
+    /**
+     * How the app looks. Held here so the choice takes effect on the tap rather
+     * than on the next launch.
+     */
+    private val _theme = MutableStateFlow(
+        ThemeChoice(settings.palette, settings.themeMode)
+    )
+    val theme: StateFlow<ThemeChoice> = _theme.asStateFlow()
 
     private val _audio = MutableStateFlow(AudioState(enabled = settings.audioEnabled))
     val audio: StateFlow<AudioState> = _audio.asStateFlow()
@@ -235,6 +249,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             audioEnabled = settings.audioEnabled,
             voiceReport = speaker.report.summary,
             voiceWorks = speaker.available,
+            palette = settings.palette,
+            themeMode = settings.themeMode,
         )
     }
 
@@ -722,6 +738,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         loadCards(_cards.value.filter)
         loadLibrary()
         _detail.value?.let { (word, _) -> openWordByHanzi(word.hanzi) }
+    }
+
+    fun setPalette(palette: Palette) = viewModelScope.launch {
+        settings.palette = palette
+        _theme.value = _theme.value.copy(palette = palette)
+        refreshSettings()
+    }
+
+    fun setThemeMode(mode: ThemeMode) = viewModelScope.launch {
+        settings.themeMode = mode
+        _theme.value = _theme.value.copy(mode = mode)
+        refreshSettings()
     }
 
     fun setAudioEnabled(enabled: Boolean) {

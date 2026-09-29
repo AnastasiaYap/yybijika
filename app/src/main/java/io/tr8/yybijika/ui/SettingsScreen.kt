@@ -11,7 +11,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,6 +41,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import io.tr8.yybijika.BuildConfig
 import io.tr8.yybijika.data.GlossLanguage
+import io.tr8.yybijika.ui.theme.Palette
+import io.tr8.yybijika.ui.theme.ThemeMode
 
 data class SettingsState(
     val maskedKey: String = "not set",
@@ -49,6 +58,8 @@ data class SettingsState(
     val audioEnabled: Boolean = true,
     val voiceReport: String = "",
     val voiceWorks: Boolean = false,
+    val palette: Palette = Palette.CINNABAR,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
 )
 
 @Composable
@@ -69,6 +80,8 @@ fun SettingsScreen(
     onToggleAudio: (Boolean) -> Unit,
     onTestSound: () -> Unit,
     onOpenVoiceSettings: () -> Unit,
+    onPalette: (Palette) -> Unit,
+    onThemeMode: (ThemeMode) -> Unit,
 ) {
     Column(
         Modifier
@@ -77,6 +90,53 @@ fun SettingsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+
+        // ---- Appearance ---------------------------------------------------
+        Section("Appearance") {
+            Text(
+                "Every palette keeps the same warm paper and soft black text. " +
+                    "Hanzi carry a lot of strokes in a small space, and maximum " +
+                    "contrast makes them shimmer after half an hour — so what " +
+                    "changes is the colour, not the readability.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Palette.entries.forEach { palette ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPalette(palette) }
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // The swatch is the palette's own accent, so the list shows
+                    // the choice rather than describing it.
+                    Box(
+                        Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(palette.swatch)
+                    )
+                    Text(palette.label, Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium)
+                    RadioButton(
+                        selected = state.palette == palette,
+                        onClick = { onPalette(palette) },
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = state.themeMode == mode,
+                        onClick = { onThemeMode(mode) },
+                        label = { Text(mode.label) },
+                    )
+                }
+            }
+        }
 
         // ---- Language -----------------------------------------------------
         Section("Question language") {

@@ -72,7 +72,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { YybijikaTheme { App() } }
+        setContent {
+            // The view model is created here rather than inside App() so the
+            // palette is available to the theme that wraps it — a theme read
+            // from below its own content would apply one tap late.
+            val vm: AppViewModel = viewModel()
+            val theme by vm.theme.collectAsState()
+            YybijikaTheme(palette = theme.palette, mode = theme.mode) { App(vm) }
+        }
     }
 }
 
@@ -100,7 +107,7 @@ private fun openVoiceSettings(context: android.content.Context) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun App(vm: AppViewModel = viewModel()) {
+private fun App(vm: AppViewModel) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var tab by remember { mutableStateOf(Tab.HOME) }
     var overlay by remember { mutableStateOf(Overlay.NONE) }
@@ -284,6 +291,8 @@ private fun App(vm: AppViewModel = viewModel()) {
                         onToggleAudio = vm::setAudioEnabled,
                         onTestSound = vm::testSound,
                         onOpenVoiceSettings = { openVoiceSettings(context) },
+                        onPalette = vm::setPalette,
+                        onThemeMode = vm::setThemeMode,
                     )
 
                     Overlay.NONE -> Unit

@@ -2,6 +2,8 @@ package io.tr8.yybijika.data
 
 import android.content.Context
 import androidx.core.content.edit
+import io.tr8.yybijika.ui.theme.Palette
+import io.tr8.yybijika.ui.theme.ThemeMode
 
 /**
  * User preferences, including the DeepSeek key.
@@ -70,6 +72,20 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_AUDIO, true)
         set(value) = prefs.edit { putBoolean(KEY_AUDIO, value) }
 
+    /**
+     * The palette and whether it follows the phone's light or dark setting.
+     *
+     * Stored as names rather than indices so adding a palette in the middle of
+     * the list cannot silently repaint someone's app.
+     */
+    var palette: Palette
+        get() = Palette.of(prefs.getString(KEY_PALETTE, null))
+        set(value) = prefs.edit { putString(KEY_PALETTE, value.name) }
+
+    var themeMode: ThemeMode
+        get() = ThemeMode.of(prefs.getString(KEY_THEME_MODE, null))
+        set(value) = prefs.edit { putString(KEY_THEME_MODE, value.name) }
+
     /** Check GitHub for a new release on launch. */
     var autoCheckUpdates: Boolean
         get() = prefs.getBoolean(KEY_AUTO_UPDATE, true)
@@ -90,5 +106,7 @@ class Settings(context: Context) {
         const val KEY_GLOSS_LANG = "gloss_language"
         const val KEY_AUTO_UPDATE = "auto_check_updates"
         const val KEY_AUDIO = "audio_enabled"
+        const val KEY_PALETTE = "palette"
+        const val KEY_THEME_MODE = "theme_mode"
     }
 }
