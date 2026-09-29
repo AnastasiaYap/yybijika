@@ -197,6 +197,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * you look a word up is worse than one with no links at all.
      */
     /** A passage is being written; null when nothing is happening. */
+    private val _songs = MutableStateFlow<List<Passage>>(emptyList())
+    val songs: StateFlow<List<Passage>> = _songs.asStateFlow()
+
+    private val _songTitle = MutableStateFlow("")
+    val songTitle: StateFlow<String> = _songTitle.asStateFlow()
+
+    private val _songLyrics = MutableStateFlow("")
+    val songLyrics: StateFlow<String> = _songLyrics.asStateFlow()
+
+    private val _songWorking = MutableStateFlow(false)
+    val songWorking: StateFlow<Boolean> = _songWorking.asStateFlow()
+
+    private val _songError = MutableStateFlow<String?>(null)
+    val songError: StateFlow<String?> = _songError.asStateFlow()
+
     private val _writingPassage = MutableStateFlow(false)
     val writingPassage: StateFlow<Boolean> = _writingPassage.asStateFlow()
 
@@ -259,6 +274,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // Written-for-you passages first: they are about what is going
         // wrong right now, and the shipped ones will keep.
         _passages.value = repo.madePassages() + repo.passages()
+        _songs.value = repo.songs()
         _patterns.value = repo.grammarPatterns()
         refreshSettings()
     }
@@ -446,6 +462,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissPassageError() { _passageError.value = null }
+
+    fun setSongTitle(text: String) { _songTitle.value = text }
+
+    fun setSongLyrics(text: String) { _songLyrics.value = text }
+
+    /**
+     * Annotate the pasted lines and keep them.
+     *
+     * Clears the form only on success, so a failed attempt does not cost the
+     * paste — retyping a song because the network dropped would be its own
+     * small punishment.
+     */
+    fun addSong() = viewModelScope.launch {
+        if (_songWorking.value) return@launch
+        _songWorking.value = true
+        _songError.value = null
+        repo.addSong(
+            title = _songTitle.value,
+            lyrics = _songLyrics.value,
+            apiKey = settings.deepseekKey,
+            language = settings.glossLanguage,
+        ).onSuccess {
+            _songTitle.value = ""
+            _songLyrics.value = ""
+            loadLibrary()
+        }.onFailure { _songError.value = it.message ?: "Could not read it." }
+        _songWorking.value = false
+    }
+
+    fun dismissSongError() { _songError.value = null }
 
     fun deletePassage(id: Long) = viewModelScope.launch {
         repo.deletePassage(id)

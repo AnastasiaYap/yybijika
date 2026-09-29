@@ -55,10 +55,12 @@ fun ReadScreen(
     onMakePassage: () -> Unit,
     onDismissError: () -> Unit,
     onDeletePassage: (Long) -> Unit,
+    songs: List<Passage>,
+    onAddSong: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
 
-    val passage = passages.firstOrNull { it.id == openPassageId }
+    val passage = (passages + songs).firstOrNull { it.id == openPassageId }
     if (passage != null) {
         PassageReader(passage, showPinyin, onSpeak, onOpenWord, onShowPinyin) {
             onOpenPassage(null)
@@ -71,6 +73,8 @@ fun ReadScreen(
             Tab(selected = tab == 0, onClick = { tab = 0 },
                 text = { Text("Essays") })
             Tab(selected = tab == 1, onClick = { tab = 1 },
+                text = { Text("Songs") })
+            Tab(selected = tab == 2, onClick = { tab = 2 },
                 text = { Text("Grammar") })
         }
         when (tab) {
@@ -168,6 +172,80 @@ fun ReadScreen(
             }
 
             1 -> LazyColumn(Modifier.fillMaxSize()) {
+                item {
+                    Card(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Songs you are listening to",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                // Why a song is worth the trouble: the lines are
+                                // short, they bend for the tune, and they are the
+                                // one text you will hear a hundred times without
+                                // meaning to.
+                                "Paste the lines and each one comes back with its " +
+                                    "reading, its meaning, and every word tappable.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Button(onClick = onAddSong) { Text("Add a song") }
+                        }
+                    }
+                }
+                items(songs, key = { it.id }) { song ->
+                    Card(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .clickable { onOpenPassage(song.id) },
+                    ) {
+                        Column(Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(song.title, style = HanziInline)
+                            Text(
+                                "${song.lines.size} lines · ${song.charCount} characters",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "uses ${song.deckWords} of your words" +
+                                    if (song.unknownWords > 0)
+                                        "  ·  ${song.unknownWords} new to you" else "",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                TextButton(onClick = { onDeletePassage(song.id) }) {
+                                    Text("Delete")
+                                }
+                            }
+                        }
+                    }
+                }
+                if (songs.isEmpty()) {
+                    item {
+                        Text(
+                            "No songs yet.",
+                            Modifier.padding(24.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            2 -> LazyColumn(Modifier.fillMaxSize()) {
                 items(patterns, key = { it.id }) { pattern ->
                     Card(
                         Modifier

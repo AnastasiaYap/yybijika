@@ -118,6 +118,45 @@ class DeepSeek(private val apiKey: String) {
         )
     }
 
+    /**
+     * Annotate lines the learner has pasted: reading, meaning, word boundaries.
+     *
+     * Annotation only. The model is given the text and asked to explain it; it
+     * is never asked to supply, recall or continue a song, and the app has no
+     * way to fetch one. What comes back is a reading of words that were already
+     * on the screen — which is what a dictionary does, and the reason this is a
+     * study tool rather than a way of getting hold of lyrics.
+     *
+     * Song language is its own problem: lines are short, inverted for the tune,
+     * and full of 啊 and 呀 padding out a beat. The prompt says so, because a
+     * model translating them as ordinary prose produces confident nonsense.
+     */
+    suspend fun annotate(
+        lines: List<String>,
+        language: String,
+    ): List<DraftLine> = withContext(Dispatchers.IO) {
+        if (lines.isEmpty()) return@withContext emptyList()
+        val asked = JSONObject().apply {
+            put("lines", JSONArray(lines))
+            put("gloss_language", language)
+        }
+        val reply = request(ANNOTATE_PROMPT + asked.toString(2))
+        val out = JSONObject(extractJson(reply)).getJSONArray("lines")
+
+        (0 until out.length()).map { i ->
+            val line = out.getJSONObject(i)
+            val pieces = line.optJSONArray("words")
+            DraftLine(
+                // The original line wins over whatever came back: the reader
+                // must see what she pasted, not the model's tidied version of it.
+                zh = lines.getOrElse(i) { line.optString("zh") },
+                pinyin = line.optString("pinyin"),
+                gloss = line.optString("gloss"),
+                words = (0 until (pieces?.length() ?: 0)).map { pieces!!.getString(it) },
+            )
+        }
+    }
+
     /** Models sometimes wrap JSON in prose or a fence; take the object. */
     private fun extractJson(reply: String): String {
         val start = reply.indexOf('{')
@@ -303,6 +342,26 @@ Rules:
   "answer" is the index of the correct one.
 
 Here is the request:
+"""
+
+        const val ANNOTATE_PROMPT = """Annotate these Chinese lines for a
+learner. They are lines the learner already has in front of her; explain them,
+do not replace them. Reply with JSON only:
+
+{"lines": [{"pinyin": "...", "gloss": "...", "words": ["...", "..."]}]}
+
+Rules:
+- One entry per input line, in the same order, same count. An empty input line
+  gets an entry with empty strings.
+- "pinyin" is that line with tone marks, spaced by syllable.
+- "gloss" is what the line means, in gloss_language. These are song lines:
+  word order may be inverted for the tune, and 啊 呀 哦 may be there only to
+  fill a beat. Translate what it means, not word by word, and do not invent a
+  meaning for a line that is only padding — say so plainly instead.
+- "words" is the line cut at word boundaries, punctuation as its own entries.
+  Every character of the line must appear in "words", in order.
+
+Here are the lines:
 """
 
         const val CHECK_PROMPT = """You are marking one sentence written by a

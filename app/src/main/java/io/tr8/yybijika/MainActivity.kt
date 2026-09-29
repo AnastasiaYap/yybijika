@@ -41,6 +41,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.tr8.yybijika.ui.AddNotesScreen
+import io.tr8.yybijika.ui.AddSongScreen
 import io.tr8.yybijika.ui.AppViewModel
 import io.tr8.yybijika.ui.BrowseScreen
 import io.tr8.yybijika.ui.CardsScreen
@@ -71,7 +72,7 @@ private enum class Tab(val label: String, val zh: String, val icon: ImageVector)
 
 /** Screens pushed on top of a tab rather than being one. */
 private enum class Overlay { NONE, SESSION, QUIZ_RUN, BROWSE, DETAIL, CHARACTER,
-    SETTINGS, ADD, WRITING }
+    SETTINGS, ADD, WRITING, ADD_SONG }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -162,6 +163,11 @@ private fun App(vm: AppViewModel) {
     val markingPending by vm.markingPending.collectAsState()
     val writingPassage by vm.writingPassage.collectAsState()
     val passageError by vm.passageError.collectAsState()
+    val songs by vm.songs.collectAsState()
+    val songTitle by vm.songTitle.collectAsState()
+    val songLyrics by vm.songLyrics.collectAsState()
+    val songWorking by vm.songWorking.collectAsState()
+    val songError by vm.songError.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
@@ -212,6 +218,7 @@ private fun App(vm: AppViewModel) {
                                 Overlay.DETAIL -> detail?.first?.hanzi.orEmpty()
                                 Overlay.CHARACTER -> character?.first?.hanzi.orEmpty()
                                 Overlay.WRITING -> "Your writing"
+                                Overlay.ADD_SONG -> "Add a song"
                                 Overlay.SETTINGS -> "Settings"
                                 Overlay.NONE -> ""
                             }
@@ -311,6 +318,18 @@ private fun App(vm: AppViewModel) {
                         onOpenSettings = { overlay = Overlay.SETTINGS },
                     )
 
+                    Overlay.ADD_SONG -> AddSongScreen(
+                        title = songTitle,
+                        lyrics = songLyrics,
+                        working = songWorking,
+                        error = songError,
+                        hasKey = settings.hasKey,
+                        onTitle = vm::setSongTitle,
+                        onLyrics = vm::setSongLyrics,
+                        onAdd = vm::addSong,
+                        onOpenSettings = { overlay = Overlay.SETTINGS },
+                    )
+
                     Overlay.WRITING -> WritingScreen(
                         compositions = writing,
                         pending = pendingWriting,
@@ -400,6 +419,8 @@ private fun App(vm: AppViewModel) {
                         onMakePassage = vm::makePassage,
                         onDismissError = vm::dismissPassageError,
                         onDeletePassage = vm::deletePassage,
+                        songs = songs,
+                        onAddSong = { vm.dismissSongError(); overlay = Overlay.ADD_SONG },
                         onSpeak = vm::speak,
                         // A word tapped in a passage opens its own card, and
                         // Back returns to the passage rather than out of it.

@@ -94,6 +94,32 @@ class PassageCheckTest {
         assertEquals(2, checked.unknownWords)
     }
 
+    /**
+     * A song is not written to practise anything, so it has no target words to
+     * have left out — the check must not reject it for that.
+     */
+    @Test
+    fun `text with no target words is accepted`() {
+        val checked = PassageCheck.check(
+            lines = listOf(line("经理签了合同。", listOf("经理", "签", "了", "合同", "。"))),
+            targets = emptyList(),
+            known = known,
+        )
+        assertEquals(1, checked.lines.size)
+    }
+
+    /**
+     * Song lines are short and repeat. A repeated line is not an error and must
+     * come through as its own entry, or the reading stops lining up with the
+     * words on the page.
+     */
+    @Test
+    fun `repeated lines are each kept`() {
+        val one = line("我们签了合同。", listOf("我们", "签", "了", "合同", "。"))
+        val checked = PassageCheck.check(listOf(one, one, one), emptyList(), known)
+        assertEquals(3, checked.lines.size)
+    }
+
     @Test
     fun `a passage entirely within the vocabulary counts nothing unknown`() {
         val checked = PassageCheck.check(

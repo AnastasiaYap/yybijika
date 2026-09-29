@@ -30,6 +30,11 @@ import kotlin.random.Random
  * Everything above this (the view models, the screens) deals in sessions and
  * answers; everything below deals in rows.
  */
+private const val SONG = "song"
+
+/** One request has to hold a whole song, or the second half loses its context. */
+const val MAX_SONG_LINES = 60
+
 class Repo(
     private val content: ContentDb,
     private val progress: ProgressDb,
@@ -386,8 +391,10 @@ class Repo(
      * Same [Passage] type on purpose: the reader, the questions and the tappable
      * words all work without knowing where a passage came from.
      */
-    suspend fun madePassages(): List<Passage> = withContext(Dispatchers.IO) {
-        dao.madePassages().map { made ->
+    suspend fun madePassages(): List<Passage> = madeOfKind("passage")
+
+    private suspend fun madeOfKind(kind: String): List<Passage> = withContext(Dispatchers.IO) {
+        dao.madePassages(kind).map { made ->
             val lines = dao.madeLines(made.id)
             Passage(
                 id = -made.id,     // negative, so it cannot collide with a shipped one
@@ -414,13 +421,107 @@ class Repo(
                     )
                 },
                 practises = made.targets.split("、").filter { it.isNotBlank() },
-                tags = listOf("written for you"),
+                tags = listOf(if (kind == SONG) "song" else "written for you"),
                 charCount = lines.sumOf { l -> l.zh.count { it.code in 0x4E00..0x9FFF } },
                 deckWords = made.targets.split("、").count { it.isNotBlank() },
                 unknownWords = made.unknownCount,
             )
         }
     }
+
+    /**
+     * Annotate lyrics the learner pasted, and keep them.
+     *
+     * The text is hers: it arrives by paste and is stored on her device only.
+     * Nothing here fetches a song, and the model is asked to read what it is
+     * given rather than to supply anything.
+     *
+     * Capped at [MAX_SONG_LINES] because one request has to hold the whole
+     * thing — annotating half a song in one call and half in another loses the
+     * context that makes the second half make sense.
+     */
+    suspend fun addSong(
+        title: String,
+        lyrics: String,
+        apiKey: String,
+        language: GlossLanguage,
+    ): Result<Long> = withContext(Dispatchers.IO) {
+        val lines = lyrics.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        when {
+            title.isBlank() ->
+                return@withContext Result.failure(IllegalStateException("Give it a title."))
+            lines.isEmpty() ->
+                return@withContext Result.failure(IllegalStateException("Paste the lines first."))
+            lines.size > MAX_SONG_LINES ->
+                return@withContext Result.failure(
+                    IllegalStateException(
+                        "That is ${lines.size} lines. Add it in parts of " +
+                            "$MAX_SONG_LINES or fewer."
+                    )
+                )
+            apiKey.isBlank() ->
+                return@withContext Result.failure(
+                    IllegalStateException("No DeepSeek key — add one in Settings.")
+                )
+        }
+
+        runCatching {
+            val annotated = DeepSeek(apiKey).annotate(
+                lines = lines,
+                language = if (language == GlossLanguage.ENGLISH) "English"
+                else "Indonesian",
+            )
+            if (annotated.size != lines.size) {
+                error(
+                    "The reading came back for ${annotated.size} of ${lines.size} " +
+                        "lines. Try again."
+                )
+            }
+
+            val checked = PassageCheck.check(
+                lines = annotated.map {
+                    PassageCheck.Line(it.zh, it.pinyin, it.gloss, it.words)
+                },
+                // A song is not written to practise anything, so there is
+                // nothing it can have left out.
+                targets = emptyList(),
+                known = content.headwords.keys + content.assumedKnown,
+            )
+
+            val id = dao.putMadePassage(
+                MadePassage(
+                    title = title.trim(),
+                    titleGloss = "",
+                    kind = SONG,
+                    // Which of her own words turn up in it — the same figure the
+                    // shipped passages carry, and the reason a song is worth
+                    // more than a nice tune.
+                    targets = checked.lines
+                        .flatMap { it.pieces }
+                        .filter { content.headwords.containsKey(it) }
+                        .distinct()
+                        .joinToString("、"),
+                    unknownCount = checked.unknownWords,
+                    madeAt = System.currentTimeMillis(),
+                )
+            )
+            dao.putMadeLines(
+                checked.lines.mapIndexed { i, line ->
+                    MadeLine(
+                        passageId = id,
+                        idx = i,
+                        zh = line.zh,
+                        pinyin = line.pinyin,
+                        gloss = line.gloss,
+                        segments = line.pieces.joinToString("\u0000"),
+                    )
+                }
+            )
+            id
+        }
+    }
+
+    suspend fun songs(): List<Passage> = madeOfKind(SONG)
 
     suspend fun deletePassage(id: Long) =
         withContext(Dispatchers.IO) { dao.deleteMadePassage(-id) }

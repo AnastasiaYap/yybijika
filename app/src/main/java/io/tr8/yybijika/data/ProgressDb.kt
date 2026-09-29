@@ -158,6 +158,14 @@ data class MadePassage(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     @ColumnInfo(name = "title_gloss") val titleGloss: String,
+    /**
+     * 'passage' when the app wrote it, 'song' when the words are hers.
+     *
+     * The same tables because a song and a passage are the same thing to
+     * everything downstream — lines of Chinese with a reading, a meaning and
+     * tappable words. Only where the text came from differs.
+     */
+    val kind: String = "passage",
     /** The words it was asked to practise, comma separated, for the card. */
     val targets: String,
     /** Words in it that are in neither the deck nor HSK 1-3 — stated, not hidden. */
@@ -311,8 +319,8 @@ interface ProgressDao {
     @Upsert
     suspend fun putMadeQuestions(questions: List<MadeQuestion>)
 
-    @Query("SELECT * FROM made_passage ORDER BY made_at DESC")
-    suspend fun madePassages(): List<MadePassage>
+    @Query("SELECT * FROM made_passage WHERE kind = :kind ORDER BY made_at DESC")
+    suspend fun madePassages(kind: String = "passage"): List<MadePassage>
 
     @Query("SELECT * FROM made_line WHERE passage_id = :id ORDER BY idx")
     suspend fun madeLines(id: Long): List<MadeLine>
@@ -363,7 +371,7 @@ data class StateCount(val state: String, val n: Int)
     entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class,
                 CardState::class, CharacterState::class, Composition::class,
                 MadePassage::class, MadeLine::class, MadeQuestion::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -477,6 +485,15 @@ abstract class ProgressDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE made_passage ADD COLUMN kind TEXT NOT NULL " +
+                        "DEFAULT 'passage'"
+                )
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
@@ -486,7 +503,7 @@ abstract class ProgressDb : RoomDatabase() {
                 // Version 2 only adds user_word; Room handles that automatically
                 // once the migration is declared.
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6)
+                    MIGRATION_5_6, MIGRATION_6_7)
                 .build()
                 .also { instance = it }
         }
