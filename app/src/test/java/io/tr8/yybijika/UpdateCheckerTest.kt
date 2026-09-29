@@ -97,4 +97,52 @@ class UpdateCheckerTest {
     fun `a debug-only release is ignored rather than offered`() {
         assertNull(UpdateChecker.parse(releaseJson("YingyingBijika-0.2.0-debug.apk")))
     }
+
+    // ----------------------------------------------------------------------
+    // Picking the right deck
+    // ----------------------------------------------------------------------
+
+    /**
+     * The worst failure this app can have.
+     *
+     * A release now carries two APKs — one with the owner's own vocabulary and
+     * one with the sample deck for everybody else. content.db is replaced
+     * wholesale on install, so downloading the wrong one silently overwrites
+     * years of notes with forty sample words. "The first APK in the release" is
+     * not good enough, and the order assets come back in is not something this
+     * app gets to rely on.
+     */
+    @Test
+    fun `the starter apk is never installed over the personal one`() {
+        val release = UpdateChecker.parse(
+            releaseJson(
+                "yybijika-starter-0.2.0-release.apk",
+                "YingyingBijika-0.2.0-release.apk",
+            )
+        )!!
+        assertTrue(
+            "picked ${release.apkUrl}",
+            release.apkUrl.contains("YingyingBijika"),
+        )
+    }
+
+    @Test
+    fun `order in the release does not decide which deck is installed`() {
+        val either = listOf(
+            releaseJson("YingyingBijika-0.2.0-release.apk", "yybijika-starter-0.2.0-release.apk"),
+            releaseJson("yybijika-starter-0.2.0-release.apk", "YingyingBijika-0.2.0-release.apk"),
+        )
+        either.forEach { json ->
+            assertTrue(UpdateChecker.parse(json)!!.apkUrl.contains("YingyingBijika"))
+        }
+    }
+
+    /**
+     * And the converse: a release holding only the other build's artifact is no
+     * update at all. Offering it would be offering to replace the deck.
+     */
+    @Test
+    fun `a release with only the other deck is ignored`() {
+        assertNull(UpdateChecker.parse(releaseJson("yybijika-starter-0.2.0-release.apk")))
+    }
 }

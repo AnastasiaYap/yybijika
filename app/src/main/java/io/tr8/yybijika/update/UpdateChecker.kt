@@ -55,9 +55,14 @@ object UpdateChecker {
         for (i in 0 until assets.length()) {
             val asset = assets.getJSONObject(i)
             val name = asset.optString("name")
-            // Prefer the release build; a debug APK carries a different
-            // signature and could not install over it anyway.
-            if (name.endsWith(".apk", ignoreCase = true) &&
+            // Match this build's own artifact by name, not "the first APK in
+            // the release". A release carries more than one now — the personal
+            // deck and the starter deck — and taking whichever came back first
+            // would install someone else's vocabulary over yours, replacing
+            // content.db wholesale. A debug APK is excluded too: different
+            // signature, so it could not install over this one anyway.
+            if (name.startsWith(BuildConfig.ASSET_PREFIX, ignoreCase = true) &&
+                name.endsWith(".apk", ignoreCase = true) &&
                 !name.contains("debug", ignoreCase = true)
             ) {
                 apkUrl = asset.optString("browser_download_url")

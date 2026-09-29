@@ -34,12 +34,16 @@ android {
         applicationId = "io.tr8.yybijika"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.16.0"
+        versionCode = 17
+        versionName = "0.17.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Where the in-app updater looks for new releases.
         buildConfigField("String", "UPDATE_REPO", "\"AnastasiaYap/yybijika\"")
+
+        // Which artifact in a release belongs to this build. A release carries
+        // both decks, and a build must never install the other one over itself.
+        buildConfigField("String", "ASSET_PREFIX", "\"YingyingBijika\"")
     }
 
     buildTypes {
