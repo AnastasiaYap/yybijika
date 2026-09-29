@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -44,15 +45,19 @@ fun ReadScreen(
     passages: List<Passage>,
     patterns: List<GrammarPattern>,
     openPassageId: Long?,
+    showPinyin: Boolean,
     onSpeak: (String) -> Unit,
     onOpenWord: (String) -> Unit,
     onOpenPassage: (Long?) -> Unit,
+    onShowPinyin: (Boolean) -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
 
     val passage = passages.firstOrNull { it.id == openPassageId }
     if (passage != null) {
-        PassageReader(passage, onSpeak, onOpenWord) { onOpenPassage(null) }
+        PassageReader(passage, showPinyin, onSpeak, onOpenWord, onShowPinyin) {
+            onOpenPassage(null)
+        }
         return
     }
 
@@ -146,8 +151,10 @@ fun ReadScreen(
 @Composable
 private fun PassageReader(
     passage: Passage,
+    showPinyin: Boolean,
     onSpeak: (String) -> Unit,
     onOpenWord: (String) -> Unit,
+    onShowPinyin: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     var showTranslation by remember(passage.id) { mutableStateOf(false) }
@@ -194,7 +201,7 @@ private fun PassageReader(
                     Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    if (line.words.isEmpty()) {
+                    if (line.pieces.isEmpty()) {
                         // The older short passages predate the segmenter; they
                         // are shown whole rather than not at all.
                         Text(
@@ -205,15 +212,14 @@ private fun PassageReader(
                     } else {
                         TappableLine(line, onSpeak, onOpenWord)
                     }
-                    Text(
-                        line.pinyin,
-                        style = PinyinStyle,
-                        color = MaterialTheme.colorScheme.primary,
-                        // Tapping the reading plays the line. The characters
-                        // above are each a link to their own card, so the row
-                        // has no room for a play button of its own.
-                        modifier = Modifier.clickable { onSpeak(line.zh) },
-                    )
+                    if (showPinyin) {
+                        Text(
+                            line.pinyin,
+                            style = PinyinStyle,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { onSpeak(line.zh) },
+                        )
+                    }
                     if (showTranslation) {
                         Text(line.gloss, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -221,11 +227,19 @@ private fun PassageReader(
                 }
             }
 
-            OutlinedButton(
-                onClick = { showTranslation = !showTranslation },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (showTranslation) "Hide translation" else "Show translation")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { onShowPinyin(!showPinyin) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (showPinyin) "Hide pinyin" else "Show pinyin")
+                }
+                OutlinedButton(
+                    onClick = { showTranslation = !showTranslation },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (showTranslation) "Hide meaning" else "Show meaning")
+                }
             }
 
             passage.summary?.let { prose ->
@@ -345,17 +359,30 @@ private fun TappableLine(
     onSpeak: (String) -> Unit,
     onOpenWord: (String) -> Unit,
 ) {
-    FlowRow(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.Center) {
-        line.words.forEach { piece ->
-            val isWord = piece.any { it.code in 0x4E00..0x9FFF }
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        line.pieces.forEach { piece ->
             Text(
-                piece,
+                piece.text,
                 style = HanziInline,
-                // Punctuation is shown but not tappable: there is no card for a
-                // comma, and a tap that does nothing reads as a broken link.
-                modifier = if (isWord) Modifier.clickable { onOpenWord(piece) }
-                else Modifier,
+                // Only words the deck actually has a card for are links.
+                // Everything else — punctuation, and the ordinary words the
+                // notes never listed — is shown but inert, because a tap that
+                // opens nothing is worse than no tap at all.
+                modifier = if (piece.openable) {
+                    Modifier.clickable { onOpenWord(piece.text) }
+                } else {
+                    Modifier
+                },
             )
         }
+        // With the pinyin hidden there is nothing else on the row to tap, so
+        // playing the line needs a control of its own.
+        TextButton(
+            onClick = { onSpeak(line.zh) },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        ) { Text("🔊", style = MaterialTheme.typography.labelMedium) }
     }
 }

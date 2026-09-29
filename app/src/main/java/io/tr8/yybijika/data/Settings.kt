@@ -86,6 +86,18 @@ class Settings(context: Context) {
         get() = ThemeMode.of(prefs.getString(KEY_THEME_MODE, null))
         set(value) = prefs.edit { putString(KEY_THEME_MODE, value.name) }
 
+    /**
+     * Whether reading passages show their pinyin.
+     *
+     * Off by default, and that is the pedagogical position rather than a
+     * space-saving one: with the reading printed under every line the eye goes
+     * to it and the characters never have to be read at all. It is there for
+     * the line you are stuck on, not for the whole page.
+     */
+    var passagePinyin: Boolean
+        get() = prefs.getBoolean(KEY_PASSAGE_PINYIN, false)
+        set(value) = prefs.edit { putBoolean(KEY_PASSAGE_PINYIN, value) }
+
     /** Check GitHub for a new release on launch. */
     var autoCheckUpdates: Boolean
         get() = prefs.getBoolean(KEY_AUTO_UPDATE, true)
@@ -106,6 +118,7 @@ class Settings(context: Context) {
         const val KEY_GLOSS_LANG = "gloss_language"
         const val KEY_AUTO_UPDATE = "auto_check_updates"
         const val KEY_AUDIO = "audio_enabled"
+        const val KEY_PASSAGE_PINYIN = "passage_pinyin"
         const val KEY_PALETTE = "palette"
         const val KEY_THEME_MODE = "theme_mode"
     }

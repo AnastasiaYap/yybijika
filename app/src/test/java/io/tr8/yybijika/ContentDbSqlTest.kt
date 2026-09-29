@@ -77,6 +77,63 @@ class ContentDbSqlTest {
     }
 
     /**
+     * Every link the reader offers has to have something behind it.
+     *
+     * The failure this replaces: tapping a word in a passage opened a blank
+     * screen, because the reader made every word a link and only some of them
+     * are in the deck. The fix is that a piece knows whether it is openable, and
+     * this is the check that the two sets are actually different — if every
+     * segment were a headword the fix would be untested and the next passage
+     * would bring the bug back.
+     */
+    @Test
+    fun `passages contain words the deck has no card for`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        // Rebuilt the way the app does it: segments split on NUL, looked up.
+        val headwords = query("SELECT hanzi FROM word") { rs ->
+            buildSet<String> { while (rs.next()) add(rs.getString(1)) }
+        }
+        val pieces = query(
+            "SELECT segments FROM passage_token WHERE segments IS NOT NULL"
+        ) { rs ->
+            buildList<String> {
+                while (rs.next()) {
+                    addAll(rs.getString(1).split('\u0000').filter { it.isNotBlank() })
+                }
+            }
+        }
+        assertTrue("no passage has been segmented", pieces.isNotEmpty())
+
+        val han = pieces.filter { p -> p.any { it.code in 0x4E00..0x9FFF } }
+        val openable = han.count { it in headwords }
+        assertTrue("some passage words must be openable", openable > 0)
+        assertTrue(
+            "if every word were in the deck, the openable check would be dead " +
+                "code and the blank screen would return with the next passage",
+            openable < han.size,
+        )
+    }
+
+    /**
+     * Relations point at a hanzi, not always at a headword: the measure-word
+     * pairs name 间 and 座, which the deck teaches inside words and has no
+     * entry for. Those links are shown but must not open.
+     */
+    @Test
+    fun `some relations point outside the deck`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        val dangling = count(
+            """SELECT r.rowid AS word_id FROM relation r
+               WHERE NOT EXISTS (SELECT 1 FROM word w WHERE w.hanzi = r.related_hanzi)"""
+        )
+        assertTrue(
+            "relations to non-headwords are expected — the reader has to know " +
+                "which they are rather than assume there are none",
+            dangling > 0,
+        )
+    }
+
+    /**
      * The character layer is the point of the character questions, so a deck
      * that shipped without meanings would leave both types generating nothing
      * while the Quiz screen still counted them as available.

@@ -196,6 +196,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * of composition entirely — and a reader that loses your place every time
      * you look a word up is worse than one with no links at all.
      */
+    private val _passagePinyin = MutableStateFlow(settings.passagePinyin)
+    val passagePinyin: StateFlow<Boolean> = _passagePinyin.asStateFlow()
+
     private val _writing = MutableStateFlow<List<Composition>>(emptyList())
     val writing: StateFlow<List<Composition>> = _writing.asStateFlow()
 
@@ -384,6 +387,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- the character deck ----------------------------------------------
+
+    fun setPassagePinyin(show: Boolean) {
+        settings.passagePinyin = show
+        _passagePinyin.value = show
+    }
 
     fun loadWriting() = viewModelScope.launch {
         _writing.value = repo.compositions()

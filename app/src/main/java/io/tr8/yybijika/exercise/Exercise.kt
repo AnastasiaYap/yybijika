@@ -93,6 +93,14 @@ data class Relation(
     val pinyin: String?,
     val gloss: String?,
     val note: String?,
+    /**
+     * Whether the deck has a card for the other side.
+     *
+     * Not every link points at a headword: the measure-word pairs name 间 and
+     * 座, which are answers rather than vocabulary. A link with nothing behind
+     * it is shown but not offered as one.
+     */
+    val inDeck: Boolean = true,
 )
 
 /**

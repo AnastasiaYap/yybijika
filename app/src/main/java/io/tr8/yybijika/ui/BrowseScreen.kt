@@ -237,7 +237,15 @@ fun WordDetailScreen(
                             )
                             group.forEach { rel ->
                                 Column(
-                                    Modifier.clickable { onOpenRelated(rel.hanzi) },
+                                    // Only links with a card behind them open.
+                                    // The measure-word pairs name 间 and 座,
+                                    // which the deck teaches inside words but
+                                    // has no entry for.
+                                    if (rel.inDeck) {
+                                        Modifier.clickable { onOpenRelated(rel.hanzi) }
+                                    } else {
+                                        Modifier
+                                    },
                                     verticalArrangement = Arrangement.spacedBy(1.dp),
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -31,7 +32,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -107,6 +110,26 @@ private fun openVoiceSettings(context: android.content.Context) {
     }
 }
 
+/**
+ * Shown where an entry was expected and none was found.
+ *
+ * Nothing in the app should reach this: links are only offered for words and
+ * characters the deck actually holds. It exists because the alternative, when
+ * something does slip through, is a blank screen — and a blank screen tells the
+ * reader neither what happened nor that anything went wrong at all.
+ */
+@Composable
+private fun MissingEntry(kind: String) {
+    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(
+            "That $kind is not in your deck yet. You can add it under " +
+                "Home → Add notes.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun App(vm: AppViewModel) {
@@ -134,6 +157,7 @@ private fun App(vm: AppViewModel) {
     val charCards by vm.charCards.collectAsState()
     val openPassage by vm.openPassage.collectAsState()
     val writing by vm.writing.collectAsState()
+    val passagePinyin by vm.passagePinyin.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
@@ -241,6 +265,10 @@ private fun App(vm: AppViewModel) {
                         },
                     )
 
+                    // The null branch should be unreachable — nothing offers a
+                    // link to a word the deck does not have. It is handled all
+                    // the same, because the failure it replaces was a blank
+                    // screen with no way to tell what had gone wrong.
                     Overlay.DETAIL -> detail?.let { (word, mastery) ->
                         WordDetailScreen(
                             word = word,
@@ -251,7 +279,7 @@ private fun App(vm: AppViewModel) {
                                 vm.openCharacter(it); overlay = Overlay.CHARACTER
                             },
                         )
-                    }
+                    } ?: MissingEntry("word")
 
                     Overlay.CHARACTER -> character?.let { (card, words) ->
                         CharacterScreen(
@@ -264,7 +292,7 @@ private fun App(vm: AppViewModel) {
                                 overlay = Overlay.DETAIL
                             },
                         )
-                    }
+                    } ?: MissingEntry("character")
 
                     Overlay.ADD -> AddNotesScreen(
                         text = addText,
@@ -355,6 +383,8 @@ private fun App(vm: AppViewModel) {
                         patterns = patterns,
                         openPassageId = openPassage,
                         onOpenPassage = vm::openPassage,
+                        showPinyin = passagePinyin,
+                        onShowPinyin = vm::setPassagePinyin,
                         onSpeak = vm::speak,
                         // A word tapped in a passage opens its own card, and
                         // Back returns to the passage rather than out of it.

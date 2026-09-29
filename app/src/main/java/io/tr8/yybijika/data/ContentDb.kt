@@ -86,6 +86,18 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         if (it.moveToFirst()) it.getInt(0) else 0
     }
 
+    /**
+     * Every headword and its id.
+     *
+     * Read once and held: it is 1,173 short strings, and the reading screen
+     * needs it for every piece of every line to know which words can be opened.
+     */
+    val headwords: Map<String, Long> by lazy {
+        db.rawQuery("SELECT hanzi, id FROM word", null).use { c ->
+            buildMap { while (c.moveToNext()) put(c.getString(0), c.getLong(1)) }
+        }
+    }
+
     /** Every word id in the deck, cheapest possible query for session planning. */
     fun allWordIds(): List<Long> =
         db.rawQuery("SELECT id FROM word ORDER BY id", null).use { c ->
@@ -169,7 +181,7 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         val links = mutableMapOf<Long, MutableList<Relation>>()
         db.rawQuery(
             """SELECT r.word_id, r.kind, r.related_hanzi, r.note,
-                      w2.pinyin,
+                      w2.pinyin, w2.id IS NOT NULL AS in_deck,
                       (SELECT s.gloss FROM sense s WHERE s.word_id = w2.id
                         AND s.lang = 'id' ORDER BY s.ordinal LIMIT 1) AS gloss
                FROM relation r LEFT JOIN word w2 ON w2.hanzi = r.related_hanzi
@@ -189,7 +201,10 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                         hanzi = c.getString(2),
                         note = c.getString(3),
                         pinyin = c.getString(4),
-                        gloss = c.getString(5),
+                        gloss = c.getString(6),
+                        // 间 and 座 are answers to measure-word questions, not
+                        // headwords. A link to one has nothing to open.
+                        inDeck = c.getInt(5) == 1,
                     )
                 )
             }
@@ -366,8 +381,15 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                         // line stripped of its punctuation reads wrong.
                         // Empty for the older short passages, written before the
                         // segmenter existed; the reader shows those lines whole.
-                        words = c.getString(5)
-                            ?.split("\u0000")?.filter { it.isNotBlank() }.orEmpty(),
+                        //
+                        // Each piece is resolved against the deck here rather
+                        // than in the reader, so a piece that has no card is
+                        // known to be unopenable before anyone can tap it.
+                        pieces = c.getString(5)
+                            ?.split("\u0000")
+                            ?.filter { it.isNotBlank() }
+                            ?.map { PassagePiece(it, headwords[it]) }
+                            .orEmpty(),
                     )
                 )
             }
@@ -680,12 +702,25 @@ data class Passage(
     val minutes: Int get() = maxOf(1, charCount / 120)
 }
 
+/**
+ * One piece of a line: a word, or a mark of punctuation.
+ *
+ * [wordId] is null when the deck has no card for it — most function words, and
+ * anything from HSK 1-3 the notes never bothered to write down. Those pieces are
+ * still shown, because they are part of the sentence; they are simply not
+ * links, which is the difference between a word you can look up and one you
+ * cannot.
+ */
+data class PassagePiece(val text: String, val wordId: Long?) {
+    val openable: Boolean get() = wordId != null
+}
+
 data class PassageLine(
     val zh: String,
     val pinyin: String,
     val gloss: String,
-    /** The line cut into words, so each one can be tapped and opened. */
-    val words: List<String> = emptyList(),
+    /** The line cut into pieces, each knowing whether it can be opened. */
+    val pieces: List<PassagePiece> = emptyList(),
 )
 
 /**
