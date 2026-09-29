@@ -4,6 +4,7 @@ import android.content.Context
 import io.tr8.yybijika.exercise.DeckContext
 import io.tr8.yybijika.exercise.Exercise
 import io.tr8.yybijika.learn.Composer
+import io.tr8.yybijika.learn.PassageCheck
 import io.tr8.yybijika.notes.DeepSeek
 import io.tr8.yybijika.exercise.ExampleSentence
 import io.tr8.yybijika.exercise.Overlap
@@ -285,6 +286,144 @@ class Repo(
 
     suspend fun pendingCount(): Int =
         withContext(Dispatchers.IO) { dao.unmarkedCompositions().size }
+
+    /**
+     * The words a passage should be built around: the ones she keeps losing.
+     *
+     * This is the thing ten fixed passages cannot do. The reading section knows
+     * nothing about how the reviews are going; the schedule knows exactly, and
+     * has been recording it all along.
+     */
+    suspend fun weakWords(count: Int = 8): List<WordBundle> =
+        withContext(Dispatchers.IO) {
+            val ids = dao.weakestWords(count).map { it.wordId }
+            if (ids.isEmpty()) emptyList() else content.bundles(ids.filter { it > 0 })
+        }
+
+    /**
+     * Ask for a passage about them, check it, and keep it.
+     *
+     * Everything the model returns is treated as a claim. The words it was told
+     * to use have to actually be there; the segmentation it supplies has to
+     * reassemble into the line it belongs to, or the words in the passage could
+     * not be tapped; and anything in it that is neither in the deck nor in
+     * HSK 1-3 is counted and shown on the card rather than quietly accepted.
+     */
+    suspend fun writePassage(
+        apiKey: String,
+        language: GlossLanguage,
+        count: Int = 8,
+    ): Result<Long> = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) {
+            return@withContext Result.failure(
+                IllegalStateException("No DeepSeek key — add one in Settings.")
+            )
+        }
+        val targets = weakWords(count)
+        if (targets.size < 3) {
+            return@withContext Result.failure(
+                IllegalStateException(
+                    "Not enough struggling words yet. Review for a few days and " +
+                        "there will be something worth writing about."
+                )
+            )
+        }
+
+        runCatching {
+            val draft = DeepSeek(apiKey).writePassage(
+                words = targets.map { it.hanzi },
+                vocabulary = content.bundles(content.allWordIds().shuffled().take(150))
+                    .map { it.hanzi },
+                language = if (language == GlossLanguage.ENGLISH) "English"
+                else "Indonesian",
+            )
+
+            val checked = PassageCheck.check(
+                lines = draft.lines.map {
+                    PassageCheck.Line(it.zh, it.pinyin, it.gloss, it.words)
+                },
+                targets = targets.map { it.hanzi },
+                known = content.headwords.keys + content.assumedKnown,
+            )
+            val lines = checked.lines.mapIndexed { i, line ->
+                MadeLine(
+                    passageId = 0,
+                    idx = i,
+                    zh = line.zh,
+                    pinyin = line.pinyin,
+                    gloss = line.gloss,
+                    segments = line.pieces.joinToString("\u0000"),
+                )
+            }
+
+            val id = dao.putMadePassage(
+                MadePassage(
+                    title = draft.title,
+                    titleGloss = draft.titleGloss,
+                    targets = targets.joinToString("、") { it.hanzi },
+                    unknownCount = checked.unknownWords,
+                    madeAt = System.currentTimeMillis(),
+                )
+            )
+            dao.putMadeLines(lines.map { it.copy(passageId = id) })
+            dao.putMadeQuestions(
+                draft.questions.map {
+                    MadeQuestion(
+                        passageId = id,
+                        q = it.q,
+                        choicesJson = org.json.JSONArray(it.choices).toString(),
+                        answer = it.answer.coerceIn(0, maxOf(0, it.choices.size - 1)),
+                    )
+                }
+            )
+            id
+        }
+    }
+
+    /**
+     * The passages written for her, shaped exactly like the shipped ones.
+     *
+     * Same [Passage] type on purpose: the reader, the questions and the tappable
+     * words all work without knowing where a passage came from.
+     */
+    suspend fun madePassages(): List<Passage> = withContext(Dispatchers.IO) {
+        dao.madePassages().map { made ->
+            val lines = dao.madeLines(made.id)
+            Passage(
+                id = -made.id,     // negative, so it cannot collide with a shipped one
+                title = made.title,
+                titleId = made.titleGloss,
+                level = 0,
+                lines = lines.map { line ->
+                    PassageLine(
+                        zh = line.zh,
+                        pinyin = line.pinyin,
+                        gloss = line.gloss,
+                        pieces = line.segments.split("\u0000")
+                            .filter { it.isNotBlank() }
+                            .map { PassagePiece(it, content.headwords[it]) },
+                    )
+                },
+                questions = dao.madeQuestions(made.id).map { q ->
+                    val raw = org.json.JSONArray(q.choicesJson)
+                    PassageQuestion(
+                        q = q.q,
+                        choices = (0 until raw.length()).map { raw.getString(it) },
+                        answer = q.answer,
+                        explain = null,
+                    )
+                },
+                practises = made.targets.split("、").filter { it.isNotBlank() },
+                tags = listOf("written for you"),
+                charCount = lines.sumOf { l -> l.zh.count { it.code in 0x4E00..0x9FFF } },
+                deckWords = made.targets.split("、").count { it.isNotBlank() },
+                unknownWords = made.unknownCount,
+            )
+        }
+    }
+
+    suspend fun deletePassage(id: Long) =
+        withContext(Dispatchers.IO) { dao.deleteMadePassage(-id) }
 
     /** Everything she has written, newest first. */
     suspend fun compositions(limit: Int = 200): List<Composition> =

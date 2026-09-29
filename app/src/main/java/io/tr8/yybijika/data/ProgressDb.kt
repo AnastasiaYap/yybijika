@@ -145,6 +145,47 @@ data class Composition(
     @ColumnInfo(name = "written_at") val writtenAt: Long = 0,
 )
 
+/**
+ * A passage written for her, from the words she keeps failing.
+ *
+ * In progress.db rather than content.db, and that is the whole reason this is a
+ * separate set of tables rather than rows in the shipped ones: content.db is
+ * replaced wholesale on every release, and a story written about your own weak
+ * words is not something an app update gets to throw away.
+ */
+@Entity(tableName = "made_passage")
+data class MadePassage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    @ColumnInfo(name = "title_gloss") val titleGloss: String,
+    /** The words it was asked to practise, comma separated, for the card. */
+    val targets: String,
+    /** Words in it that are in neither the deck nor HSK 1-3 — stated, not hidden. */
+    @ColumnInfo(name = "unknown_count") val unknownCount: Int = 0,
+    @ColumnInfo(name = "made_at") val madeAt: Long = 0,
+)
+
+@Entity(tableName = "made_line")
+data class MadeLine(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "passage_id") val passageId: Long,
+    val idx: Int,
+    val zh: String,
+    val pinyin: String,
+    val gloss: String,
+    /** NUL-separated, as in the shipped passages, so the reader is unchanged. */
+    val segments: String,
+)
+
+@Entity(tableName = "made_question")
+data class MadeQuestion(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "passage_id") val passageId: Long,
+    val q: String,
+    @ColumnInfo(name = "choices_json") val choicesJson: String,
+    val answer: Int,
+)
+
 @Entity(tableName = "daily")
 data class Daily(
     @PrimaryKey val date: Long,        // epoch day
@@ -261,6 +302,44 @@ interface ProgressDao {
     @Upsert
     suspend fun putComposition(composition: Composition): Long
 
+    @Upsert
+    suspend fun putMadePassage(passage: MadePassage): Long
+
+    @Upsert
+    suspend fun putMadeLines(lines: List<MadeLine>)
+
+    @Upsert
+    suspend fun putMadeQuestions(questions: List<MadeQuestion>)
+
+    @Query("SELECT * FROM made_passage ORDER BY made_at DESC")
+    suspend fun madePassages(): List<MadePassage>
+
+    @Query("SELECT * FROM made_line WHERE passage_id = :id ORDER BY idx")
+    suspend fun madeLines(id: Long): List<MadeLine>
+
+    @Query("SELECT * FROM made_question WHERE passage_id = :id ORDER BY id")
+    suspend fun madeQuestions(id: Long): List<MadeQuestion>
+
+    @Query("DELETE FROM made_passage WHERE id = :id")
+    suspend fun deleteMadePassage(id: Long)
+
+    /**
+     * The words worth writing a story about: struggling first, then whatever
+     * has lapsed most. Excludes retired cards — a word you have deliberately
+     * put down is not one you want a passage built around.
+     */
+    @Query(
+        """SELECT m.wordId AS wordId, SUM(m.lapses) * 10 - MIN(m.box) AS n
+           FROM mastery m
+           LEFT JOIN card_state c ON c.wordId = m.wordId
+           WHERE (c.state IS NULL OR c.state != 'retired')
+           GROUP BY m.wordId
+           HAVING SUM(m.lapses) > 0 OR MIN(m.box) <= 1
+           ORDER BY n DESC
+           LIMIT :limit"""
+    )
+    suspend fun weakestWords(limit: Int): List<WordCount>
+
     @Query("SELECT * FROM composition ORDER BY written_at DESC LIMIT :limit")
     suspend fun compositions(limit: Int): List<Composition>
 
@@ -282,8 +361,9 @@ data class StateCount(val state: String, val n: Int)
 
 @Database(
     entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class,
-                CardState::class, CharacterState::class, Composition::class],
-    version = 5,
+                CardState::class, CharacterState::class, Composition::class,
+                MadePassage::class, MadeLine::class, MadeQuestion::class],
+    version = 6,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -362,6 +442,41 @@ abstract class ProgressDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS made_passage (
+                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                         title TEXT NOT NULL,
+                         title_gloss TEXT NOT NULL,
+                         targets TEXT NOT NULL,
+                         unknown_count INTEGER NOT NULL DEFAULT 0,
+                         made_at INTEGER NOT NULL DEFAULT 0
+                       )"""
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS made_line (
+                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                         passage_id INTEGER NOT NULL,
+                         idx INTEGER NOT NULL,
+                         zh TEXT NOT NULL,
+                         pinyin TEXT NOT NULL,
+                         gloss TEXT NOT NULL,
+                         segments TEXT NOT NULL
+                       )"""
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS made_question (
+                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                         passage_id INTEGER NOT NULL,
+                         q TEXT NOT NULL,
+                         choices_json TEXT NOT NULL,
+                         answer INTEGER NOT NULL
+                       )"""
+                )
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
@@ -370,7 +485,8 @@ abstract class ProgressDb : RoomDatabase() {
                 // a destructive migration would throw away the user's progress.
                 // Version 2 only adds user_word; Room handles that automatically
                 // once the migration is declared.
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                    MIGRATION_5_6)
                 .build()
                 .also { instance = it }
         }

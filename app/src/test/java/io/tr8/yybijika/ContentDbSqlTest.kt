@@ -177,6 +177,28 @@ class ContentDbSqlTest {
     }
 
     /**
+     * The baseline ships so the phone can judge a passage written on it the
+     * same way the build judges a hand-written one. Without it, "is this word
+     * unfamiliar" has no answer on the device: the notes record what was new,
+     * so 今天 is in neither the deck nor the notes and is new to nobody.
+     */
+    @Test
+    fun `the assumed vocabulary ships with the deck`() {
+        assumeTrue("content.db has not been built", deck.exists())
+        val n = count("SELECT hanzi AS word_id FROM assumed_known")
+        assertTrue("HSK 1-3 should be about 1,300 words, got $n", n in 1000..2000)
+
+        // The two sets are meant to overlap, not to be the same thing: the
+        // baseline is what she knows, the deck is what she wrote down.
+        val both = count(
+            """SELECT a.hanzi AS word_id FROM assumed_known a
+               JOIN word w ON w.hanzi = a.hanzi"""
+        )
+        assertTrue("the baseline and the deck must overlap", both > 100)
+        assertTrue("the baseline must also hold words the deck does not", both < n)
+    }
+
+    /**
      * The character layer is the point of the character questions, so a deck
      * that shipped without meanings would leave both types generating nothing
      * while the Quiz screen still counted them as available.

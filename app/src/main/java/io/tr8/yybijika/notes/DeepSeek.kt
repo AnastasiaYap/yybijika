@@ -34,6 +34,90 @@ class DeepSeek(private val apiKey: String) {
 
     class Failure(message: String) : Exception(message)
 
+    /** A passage written to order, before anything has been checked. */
+    data class Draft(
+        val title: String,
+        val titleGloss: String,
+        val lines: List<DraftLine>,
+        val questions: List<DraftQuestion>,
+    )
+
+    data class DraftLine(
+        val zh: String,
+        val pinyin: String,
+        val gloss: String,
+        /** The line cut into words. The model knows where they end; we do not. */
+        val words: List<String>,
+    )
+
+    data class DraftQuestion(val q: String, val choices: List<String>, val answer: Int)
+
+    /**
+     * Write a short passage around these words.
+     *
+     * The words come from what she keeps failing, which is the whole point: ten
+     * fixed passages cannot know that 索赔 and 合同 are the two she loses every
+     * week, and a story that puts them in one scene is worth more than either
+     * word drilled again on its own.
+     *
+     * The model is asked for the segmentation too. It knows where Chinese words
+     * end and the phone does not — the segmenter is a build-time dependency
+     * that has no business in an APK — and without it the words in a generated
+     * passage could not be tapped.
+     *
+     * Nothing here is trusted. What comes back is checked against the deck
+     * before it is kept, and what cannot be checked is counted and shown.
+     */
+    suspend fun writePassage(
+        words: List<String>,
+        vocabulary: List<String>,
+        language: String,
+    ): Draft = withContext(Dispatchers.IO) {
+        val asked = JSONObject().apply {
+            put("must_use", JSONArray(words))
+            put("gloss_language", language)
+            // A sample rather than the whole deck: 1,173 words would dominate
+            // the request, and the instruction is what does the work anyway.
+            put("learner_vocabulary_sample", JSONArray(vocabulary.take(150)))
+        }
+        val reply = request(PASSAGE_PROMPT + asked.toString(2))
+        val json = JSONObject(extractJson(reply))
+
+        val lines = json.getJSONArray("lines").let { arr ->
+            (0 until arr.length()).map { i ->
+                val line = arr.getJSONObject(i)
+                val pieces = line.optJSONArray("words")
+                DraftLine(
+                    zh = line.getString("zh"),
+                    pinyin = line.optString("pinyin"),
+                    gloss = line.optString("gloss"),
+                    words = (0 until (pieces?.length() ?: 0))
+                        .map { pieces!!.getString(it) },
+                )
+            }
+        }
+        if (lines.isEmpty()) throw Failure("the reply had no lines")
+
+        val questions = json.optJSONArray("questions").let { arr ->
+            (0 until (arr?.length() ?: 0)).mapNotNull { i ->
+                val q = arr!!.getJSONObject(i)
+                val choices = q.optJSONArray("choices") ?: return@mapNotNull null
+                DraftQuestion(
+                    q = q.getString("q"),
+                    choices = (0 until choices.length()).map { choices.getString(it) },
+                    answer = q.optInt("answer", 0),
+                )
+            }
+        }
+
+        Draft(
+            title = json.optString("title").ifBlank { words.firstOrNull().orEmpty() },
+            titleGloss = json.optString("title_gloss"),
+            lines = lines,
+            questions = questions,
+        )
+    }
+
     /** Models sometimes wrap JSON in prose or a fence; take the object. */
     private fun extractJson(reply: String): String {
         val start = reply.indexOf('{')
@@ -197,6 +281,30 @@ class DeepSeek(private val apiKey: String) {
     }
 
     private companion object {
+        const val PASSAGE_PROMPT = """Write a short Chinese reading passage for
+a learner. Reply with JSON only:
+
+{"title": "...", "title_gloss": "...",
+ "lines": [{"zh": "...", "pinyin": "...", "gloss": "...",
+            "words": ["...", "..."]}],
+ "questions": [{"q": "...", "choices": ["...","...","...","..."], "answer": 0}]}
+
+Rules:
+- 12 to 18 lines. One sentence per line. It must be a story with something
+  happening in it, not a list of sentences that use the words.
+- Every word in "must_use" has to appear, and to matter to the story.
+- Use only common vocabulary (HSK 1-3) plus the words in "must_use" and the
+  sample given. Do not reach for a rarer word when a common one will do.
+- "words" is that same line cut at word boundaries, punctuation included as its
+  own entries. Every character of "zh" must appear in "words", in order.
+- "pinyin" is the line with tone marks, spaced by syllable.
+- "gloss" is the line translated into gloss_language.
+- 4 questions about what the passage said, in Chinese, each with 4 choices.
+  "answer" is the index of the correct one.
+
+Here is the request:
+"""
+
         const val CHECK_PROMPT = """You are marking one sentence written by a
 learner of Chinese. Reply with JSON only:
 

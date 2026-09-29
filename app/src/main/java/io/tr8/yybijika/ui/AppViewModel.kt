@@ -196,6 +196,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * of composition entirely — and a reader that loses your place every time
      * you look a word up is worse than one with no links at all.
      */
+    /** A passage is being written; null when nothing is happening. */
+    private val _writingPassage = MutableStateFlow(false)
+    val writingPassage: StateFlow<Boolean> = _writingPassage.asStateFlow()
+
+    private val _passageError = MutableStateFlow<String?>(null)
+    val passageError: StateFlow<String?> = _passageError.asStateFlow()
+
     private val _pendingWriting = MutableStateFlow(0)
     val pendingWriting: StateFlow<Int> = _pendingWriting.asStateFlow()
 
@@ -249,7 +256,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun loadLibrary() = viewModelScope.launch {
         loadCards(_cards.value.filter)
-        _passages.value = repo.passages()
+        // Written-for-you passages first: they are about what is going
+        // wrong right now, and the shipped ones will keep.
+        _passages.value = repo.madePassages() + repo.passages()
         _patterns.value = repo.grammarPatterns()
         refreshSettings()
     }
@@ -418,6 +427,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openPassage(id: Long?) { _openPassage.value = id }
+
+    /**
+     * Write a passage from whatever she is currently losing.
+     *
+     * Always explicit. It costs an API call and takes half a minute, and doing
+     * that on its own schedule rather than hers would be presumptuous with
+     * somebody else's key.
+     */
+    fun makePassage() = viewModelScope.launch {
+        if (_writingPassage.value) return@launch
+        _writingPassage.value = true
+        _passageError.value = null
+        repo.writePassage(settings.deepseekKey, settings.glossLanguage)
+            .onSuccess { loadLibrary() }
+            .onFailure { _passageError.value = it.message ?: "Could not write it." }
+        _writingPassage.value = false
+    }
+
+    fun dismissPassageError() { _passageError.value = null }
+
+    fun deletePassage(id: Long) = viewModelScope.launch {
+        repo.deletePassage(id)
+        if (_openPassage.value == id) _openPassage.value = null
+        loadLibrary()
+    }
 
     fun setDeckKind(kind: DeckKind) {
         _deckKind.value = kind

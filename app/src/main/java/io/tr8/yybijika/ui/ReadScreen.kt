@@ -46,10 +46,15 @@ fun ReadScreen(
     patterns: List<GrammarPattern>,
     openPassageId: Long?,
     showPinyin: Boolean,
+    writing: Boolean,
+    error: String?,
     onSpeak: (String) -> Unit,
     onOpenWord: (String) -> Unit,
     onOpenPassage: (Long?) -> Unit,
     onShowPinyin: (Boolean) -> Unit,
+    onMakePassage: () -> Unit,
+    onDismissError: () -> Unit,
+    onDeletePassage: (Long) -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
 
@@ -70,6 +75,42 @@ fun ReadScreen(
         }
         when (tab) {
             0 -> LazyColumn(Modifier.fillMaxSize()) {
+                item {
+                    Card(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Something to read about what you keep forgetting",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                // Why this exists, in one line: the ten shipped
+                                // passages cannot know which words are going
+                                // wrong this week, and the schedule does.
+                                "The passages below are fixed. This one is written " +
+                                    "now, from the words you are currently losing.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            error?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error)
+                            }
+                            Button(
+                                onClick = { onDismissError(); onMakePassage() },
+                                enabled = !writing,
+                            ) {
+                                Text(if (writing) "Writing…" else "Write me one")
+                            }
+                        }
+                    }
+                }
                 items(passages, key = { it.id }) { p ->
                     Card(
                         Modifier
@@ -91,12 +132,36 @@ fun ReadScreen(
                             // The number that says why this one is worth
                             // reading rather than any other text in Chinese.
                             Text(
-                                "practises ${p.deckWords} of your words" +
+                                if (p.madeForYou)
+                                    "written for you  ·  ${p.practises.joinToString("、")}"
+                                else "practises ${p.deckWords} of your words" +
                                     if (p.tags.isEmpty()) ""
                                     else "  ·  ${p.tags.joinToString(", ")}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )
+                            if (p.madeForYou) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // A generated passage has not been read by
+                                    // anyone before it reaches her, so what could
+                                    // not be checked is stated rather than hidden.
+                                    Text(
+                                        if (p.unknownWords == 0)
+                                            "every word checked against your deck"
+                                        else "${p.unknownWords} words it used are " +
+                                            "new to you",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    TextButton(onClick = { onDeletePassage(p.id) }) {
+                                        Text("Delete")
+                                    }
+                                }
+                            }
                         }
                     }
                 }

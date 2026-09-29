@@ -604,6 +604,18 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         return out
     }
 
+    /**
+     * The vocabulary a reader of these notes already has: HSK 1-3, shipped.
+     *
+     * The notes record what was new, so the deck alone cannot answer "is this
+     * word unfamiliar" — 今天 is in neither and is not new to anybody.
+     */
+    val assumedKnown: Set<String> by lazy {
+        db.rawQuery("SELECT hanzi FROM assumed_known", null).use { c ->
+            buildSet { while (c.moveToNext()) add(c.getString(0)) }
+        }
+    }
+
     /** Every measure word in the deck, for measure-word distractors. */
     fun measureWords(): List<String> = db.rawQuery(
         """SELECT DISTINCT related_hanzi FROM relation
@@ -691,7 +703,18 @@ data class Passage(
     val tags: List<String> = emptyList(),
     val charCount: Int = 0,
     val deckWords: Int = 0,
+    /**
+     * Words a generated passage used that are in neither the deck nor HSK 1-3.
+     *
+     * Always zero for the shipped passages, where the same count is a build
+     * warning. Shown on the card rather than hidden: a passage written on
+     * demand has not been read by anyone before it reaches her.
+     */
+    val unknownWords: Int = 0,
 ) {
+    /** True when this one was written on the phone rather than shipped. */
+    val madeForYou: Boolean get() = id < 0
+
     val comprehension: List<PassageQuestion>
         get() = questions.filter { it.kind == "comprehension" }
 

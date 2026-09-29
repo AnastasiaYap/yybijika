@@ -135,6 +135,15 @@ CREATE TABLE orphan (
     reason TEXT
 );
 
+-- The vocabulary a reader of these notes already has, from pipeline/baseline.py.
+-- Shipped because the phone needs it too: a passage written on the device has to
+-- be judged the same way a hand-written one is, and "is this word new" is not a
+-- question the deck alone can answer — the notes record what was new, not what
+-- is known.
+CREATE TABLE assumed_known (
+    hanzi TEXT PRIMARY KEY
+);
+
 CREATE TABLE passage (
     id          INTEGER PRIMARY KEY,
     title       TEXT NOT NULL,

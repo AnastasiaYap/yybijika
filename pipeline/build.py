@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import baseline  # noqa: E402
 import characters  # noqa: E402
 import curate  # noqa: E402
 import essay_check  # noqa: E402
@@ -334,6 +335,9 @@ def build(db_path: Path = DB_PATH, refresh: bool = False) -> sqlite3.Connection:
                    VALUES (?,?,?)""",
                 (wid, ch, i),
             )
+
+    for known in sorted(baseline.ASSUMED_KNOWN):
+        conn.execute("INSERT OR IGNORE INTO assumed_known (hanzi) VALUES (?)", (known,))
 
     # --- borrowed contexts -------------------------------------------------
     #

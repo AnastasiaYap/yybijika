@@ -160,6 +160,8 @@ private fun App(vm: AppViewModel) {
     val passagePinyin by vm.passagePinyin.collectAsState()
     val pendingWriting by vm.pendingWriting.collectAsState()
     val markingPending by vm.markingPending.collectAsState()
+    val writingPassage by vm.writingPassage.collectAsState()
+    val passageError by vm.passageError.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
@@ -393,6 +395,11 @@ private fun App(vm: AppViewModel) {
                         onOpenPassage = vm::openPassage,
                         showPinyin = passagePinyin,
                         onShowPinyin = vm::setPassagePinyin,
+                        writing = writingPassage,
+                        error = passageError,
+                        onMakePassage = vm::makePassage,
+                        onDismissError = vm::dismissPassageError,
+                        onDeletePassage = vm::deletePassage,
                         onSpeak = vm::speak,
                         // A word tapped in a passage opens its own card, and
                         // Back returns to the passage rather than out of it.
