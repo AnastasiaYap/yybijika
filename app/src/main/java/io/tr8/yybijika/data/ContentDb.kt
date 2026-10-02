@@ -488,8 +488,8 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         if (ids.isEmpty()) return emptyList()
         val placeholders = ids.joinToString(",") { "?" }
         val found = db.rawQuery(
-            "SELECT hanzi, pinyin, gloss, gloss_en, word_count FROM character " +
-                "WHERE hanzi IN ($placeholders)",
+            "SELECT hanzi, pinyin, gloss, gloss_en, word_count, is_function " +
+                "FROM character WHERE hanzi IN ($placeholders)",
             ids.toTypedArray(),
         ).use { c ->
             buildList {
@@ -501,6 +501,7 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                             gloss = c.getString(2),
                             glossEn = c.getString(3),
                             wordCount = c.getInt(4),
+                            isFunction = c.getInt(5) == 1,
                         )
                     )
                 }
@@ -616,6 +617,26 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         }
     }
 
+    /**
+     * Which characters each word is made of, for the whole deck at once.
+     *
+     * Needed to ask whether a run of failures shares a character, which is a
+     * question about every reviewed word together rather than about one of
+     * them.
+     */
+    fun wordCharacters(): Map<Long, List<String>> {
+        val out = mutableMapOf<Long, MutableList<String>>()
+        db.rawQuery(
+            "SELECT word_id, hanzi FROM word_character ORDER BY word_id, position",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.getOrPut(c.getLong(0)) { mutableListOf() }.add(c.getString(1))
+            }
+        }
+        return out
+    }
+
     /** Every measure word in the deck, for measure-word distractors. */
     fun measureWords(): List<String> = db.rawQuery(
         """SELECT DISTINCT related_hanzi FROM relation
@@ -670,6 +691,8 @@ data class CharacterCard(
     val gloss: String?,
     val glossEn: String?,
     val wordCount: Int,
+    /** Grammar rather than vocabulary — see pipeline/characters.py. */
+    val isFunction: Boolean = false,
 ) {
     /** Only a character that recurs, and has a meaning, is worth teaching. */
     val teachable: Boolean get() = wordCount >= 2 && !gloss.isNullOrBlank()

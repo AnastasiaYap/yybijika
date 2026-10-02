@@ -4,6 +4,11 @@ import android.content.Context
 import io.tr8.yybijika.exercise.DeckContext
 import io.tr8.yybijika.exercise.Exercise
 import io.tr8.yybijika.learn.Composer
+import io.tr8.yybijika.learn.CharacterLift
+import io.tr8.yybijika.learn.Diagnosis
+import io.tr8.yybijika.learn.SkillGap
+import io.tr8.yybijika.learn.TroubleCharacter
+import io.tr8.yybijika.learn.TroubleWord
 import io.tr8.yybijika.learn.PassageCheck
 import io.tr8.yybijika.notes.DeepSeek
 import io.tr8.yybijika.exercise.ExampleSentence
@@ -291,6 +296,90 @@ class Repo(
 
     suspend fun pendingCount(): Int =
         withContext(Dispatchers.IO) { dao.unmarkedCompositions().size }
+
+    /**
+     * What is going wrong, read back out of everything already recorded.
+     *
+     * Nothing here is new data — the schedules, the lapses and the slips have
+     * been accumulating since the first review. This is the first thing that
+     * asks them a question.
+     */
+    suspend fun diagnose(): Diagnosis = withContext(Dispatchers.IO) {
+        val skills = dao.skillSummary().map {
+            SkillGap(
+                skill = skillFromKey(it.skill),
+                words = it.words,
+                meanBox = it.meanBox,
+                lapses = it.lapses,
+            )
+        }.sortedBy { it.meanBox }
+
+        val trouble = dao.troubleWords(12)
+        val bundles = content.bundles(trouble.map { it.wordId }.filter { it > 0 })
+            .associateBy { it.id }
+        val words = trouble.mapNotNull { row ->
+            val word = bundles[row.wordId] ?: return@mapNotNull null
+            val slips = dao.slipsFor(row.wordId)
+            TroubleWord(
+                wordId = row.wordId,
+                hanzi = word.hanzi,
+                pinyin = word.pinyin,
+                gloss = word.primaryGloss.orEmpty(),
+                lapses = row.lapses,
+                // What was actually answered, commonest first.
+                answeredInstead = slips.mapNotNull { it.chose }
+                    .filter { it != word.hanzi && it != word.primaryGloss }
+                    .groupingBy { it }.eachCount()
+                    .entries.sortedByDescending { it.value }
+                    .take(3).map { it.key },
+                confusableWith = word.confusables.map { it.hanzi }.take(3),
+                skill = slips.firstOrNull()?.let { skillFromKey(it.skill) },
+            )
+        }
+
+        Diagnosis(
+            skills = skills,
+            words = words,
+            characters = troubleCharacters(),
+            reviewsCounted = dao.reviewTotal(),
+        )
+    }
+
+    /**
+     * Characters whose words are lost more often than the rest of the deck's.
+     *
+     * Measured as a lift over the learner's own average rather than an absolute
+     * rate: someone who loses a third of everything would otherwise be told
+     * every character is a problem. A character must appear in at least three
+     * reviewed words before it can show a pattern at all, and be meaningfully
+     * worse than average before it is worth naming — a diagnosis that finds
+     * something every week stops being read.
+     */
+    private suspend fun troubleCharacters(): List<TroubleCharacter> {
+        val trouble = dao.wordTrouble().filter { it.reviews > 0 }
+        // Under twenty reviewed words there is no "average" worth comparing to.
+        if (trouble.size < 20) return emptyList()
+
+        val rate = trouble.associate { it.wordId to it.lapses.toDouble() / it.reviews }
+        val found = CharacterLift.find(rate, content.wordCharacters())
+        if (found.isEmpty()) return emptyList()
+
+        val names = content.bundles(rate.keys.filter { it > 0 }).associate { it.id to it.hanzi }
+        return found.mapNotNull { hit ->
+            val card = content.character(hit.hanzi) ?: return@mapNotNull null
+            // A character the deck does not teach on its own explains nothing,
+            // and grammar explains nothing either: every word contains 不.
+            if (card.gloss.isNullOrBlank() || card.isFunction) return@mapNotNull null
+            TroubleCharacter(
+                hanzi = hit.hanzi,
+                pinyin = card.pinyin,
+                gloss = card.gloss,
+                lift = hit.lift,
+                words = hit.wordIds.sortedByDescending { rate.getValue(it) }
+                    .mapNotNull { names[it] }.take(5),
+            )
+        }.take(5)
+    }
 
     /**
      * The words a passage should be built around: the ones she keeps losing.
@@ -670,6 +759,9 @@ class Repo(
         item: SessionItem,
         grade: Grade,
         combo: Int,
+        /** What was actually answered, when the exercise has an answer to keep. */
+        chose: String? = null,
+        expected: String? = null,
     ): Int = withContext(Dispatchers.IO) {
         val wordId = item.exercise.word.id
         val skillKey = item.skill.key()
@@ -694,6 +786,21 @@ class Repo(
                 reviewedAt = System.currentTimeMillis(),
             )
         )
+
+        // Only failures are kept. A log of every correct answer would grow
+        // for ever and never be read; what the diagnosis needs is the wrong one.
+        if (grade == Grade.AGAIN) {
+            dao.record(
+                Slip(
+                    ts = System.currentTimeMillis(),
+                    wordId = wordId,
+                    skill = skillKey,
+                    typeId = item.exercise.typeId,
+                    chose = chose,
+                    expected = expected,
+                )
+            )
+        }
 
         val points = Xp.award(grade, item.skill, combo)
         dao.record(

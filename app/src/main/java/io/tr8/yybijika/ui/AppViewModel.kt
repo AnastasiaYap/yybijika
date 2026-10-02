@@ -25,6 +25,7 @@ import io.tr8.yybijika.exercise.WordBundle
 import io.tr8.yybijika.exercise.Exercise
 import io.tr8.yybijika.learn.CardDeck
 import io.tr8.yybijika.learn.Composer
+import io.tr8.yybijika.learn.Diagnosis
 import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
@@ -197,6 +198,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * you look a word up is worse than one with no links at all.
      */
     /** A passage is being written; null when nothing is happening. */
+    private val _diagnosis = MutableStateFlow<Diagnosis?>(null)
+    val diagnosis: StateFlow<Diagnosis?> = _diagnosis.asStateFlow()
+
     private val _songs = MutableStateFlow<List<Passage>>(emptyList())
     val songs: StateFlow<List<Passage>> = _songs.asStateFlow()
 
@@ -422,6 +426,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setPassagePinyin(show: Boolean) {
         settings.passagePinyin = show
         _passagePinyin.value = show
+    }
+
+    fun loadDiagnosis() = viewModelScope.launch {
+        _diagnosis.value = repo.diagnose()
     }
 
     fun loadWriting() = viewModelScope.launch {
@@ -826,7 +834,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val state = _session.value
         val item = state.current ?: return@launch
 
-        val points = repo.answer(item, grade, state.combo)
+        // What was answered, so a lapse can later be described rather than
+        // merely counted. Only the exercises that have a discrete answer.
+        val chose = when (val ex = item.exercise) {
+            is Exercise.MultipleChoice -> state.chosen?.let { ex.choices.getOrNull(it) }
+            is Exercise.Cloze -> state.chosen?.let { ex.choices.getOrNull(it) }
+            is Exercise.Typing -> state.typed.trim().takeIf { it.isNotEmpty() }
+            else -> null
+        }
+        val expected = when (val ex = item.exercise) {
+            is Exercise.MultipleChoice -> ex.choices.getOrNull(ex.answerIndex)
+            is Exercise.Cloze -> ex.answer
+            is Exercise.Typing -> ex.answer
+            else -> null
+        }
+        val points = repo.answer(item, grade, state.combo, chose, expected)
         val combo = Xp.nextCombo(state.combo, grade)
         val atEnd = state.index + 1 >= state.items.size
 

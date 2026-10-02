@@ -36,6 +36,7 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onAddNotes: () -> Unit,
     onWriting: () -> Unit,
+    onDiagnosis: () -> Unit,
     writtenCount: Int = 0,
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: () -> Unit,
@@ -127,6 +128,13 @@ fun HomeScreen(
         OutlinedButton(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
             Text("Search the deck")
         }
+        // Above the deck figures on purpose. Those say 1173 / 1173 and will
+        // say it in a year — they describe the deck, not the learner. This one
+        // is the only thing on the screen that answers "how am I doing".
+        OutlinedButton(onClick = onDiagnosis, modifier = Modifier.fillMaxWidth()) {
+            Text("How you are doing")
+        }
+
         OutlinedButton(onClick = onWriting, modifier = Modifier.fillMaxWidth()) {
             Text(
                 if (writtenCount == 0) "Your writing"

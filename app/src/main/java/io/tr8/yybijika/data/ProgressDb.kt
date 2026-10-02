@@ -5,6 +5,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
@@ -57,6 +58,36 @@ data class XpEvent(
  * Ids are negative so they can never collide with a content.db id, which means
  * mastery, XP and every exercise treat a pasted word exactly like a shipped one.
  */
+/**
+ * One wrong answer, and what was chosen instead.
+ *
+ * mastery counts lapses and xp_event records that a point was not scored, but
+ * neither says *what went wrong* — and "you lose 索赔 four times in five" is a
+ * far weaker sentence than "and three of those you answered 赔偿". The second
+ * one names the confusion, which is the thing that can actually be fixed.
+ *
+ * Only wrong answers are stored. A log of every correct one would grow without
+ * ever being read, and the diagnosis is about failures.
+ */
+// The index is declared here as well as created in the migration. Room verifies
+// the schema it finds against the one these annotations describe, and an index
+// present in only one of the two is a mismatch — which fails at launch, on an
+// existing database, where it is least welcome.
+@Entity(
+    tableName = "slip",
+    indices = [Index(value = ["word_id"], name = "idx_slip_word")],
+)
+data class Slip(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ts: Long,
+    @ColumnInfo(name = "word_id") val wordId: Long,
+    val skill: String,
+    @ColumnInfo(name = "type_id") val typeId: String,
+    /** What was answered. Null when the exercise has no answer to capture. */
+    val chose: String? = null,
+    val expected: String? = null,
+)
+
 @Entity(tableName = "user_word")
 data class UserWord(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -215,6 +246,58 @@ interface ProgressDao {
     @Query("SELECT wordId, SUM(box + lapses) AS n FROM mastery GROUP BY wordId")
     suspend fun reviewCounts(): List<WordCount>
 
+    @Insert
+    suspend fun record(slip: Slip)
+
+    /** Every wrong answer for a word, most recent first. */
+    @Query("SELECT * FROM slip WHERE word_id = :wordId ORDER BY ts DESC LIMIT :limit")
+    suspend fun slipsFor(wordId: Long, limit: Int = 12): List<Slip>
+
+    /**
+     * How each skill is going: how many words have been met in it, how far
+     * along they are on average, and how often they are lost.
+     *
+     * The comparison is the point. Five schedules per word exist so a listening
+     * weakness cannot hide behind a reading strength, and until now nothing has
+     * ever put the two side by side.
+     */
+    /**
+     * Roughly how many answers have been given.
+     *
+     * box + lapses per schedule: a word resting at box 5 was answered at least
+     * five times to get there, and each lapse was an answer too. Counting
+     * schedules instead would say 26 for someone who has answered two hundred
+     * questions, which is the difference between "not enough to go on" and a
+     * screenful of findings.
+     */
+    @Query("SELECT COALESCE(SUM(box + lapses), 0) FROM mastery")
+    suspend fun reviewTotal(): Int
+
+    @Query(
+        """SELECT skill,
+                  COUNT(*) AS words,
+                  AVG(box) AS meanBox,
+                  SUM(lapses) AS lapses
+           FROM mastery GROUP BY skill"""
+    )
+    suspend fun skillSummary(): List<SkillRow>
+
+    /** The words going wrong most, by how often they are lost. */
+    @Query(
+        """SELECT m.wordId AS wordId, SUM(m.lapses) AS lapses,
+                  MIN(m.box) AS box, COUNT(*) AS skills
+           FROM mastery m
+           LEFT JOIN card_state c ON c.wordId = m.wordId
+           WHERE (c.state IS NULL OR c.state != 'retired') AND m.lapses > 0
+           GROUP BY m.wordId ORDER BY lapses DESC, box ASC LIMIT :limit"""
+    )
+    suspend fun troubleWords(limit: Int): List<TroubleRow>
+
+    /** Lapses and reviews for every word that has been seen at all. */
+    @Query("SELECT wordId, SUM(lapses) AS lapses, SUM(box + lapses) AS reviews " +
+        "FROM mastery GROUP BY wordId")
+    suspend fun wordTrouble(): List<WordTrouble>
+
     @Query("SELECT * FROM mastery WHERE wordId = :wordId")
     suspend fun masteryFor(wordId: Long): List<Mastery>
 
@@ -365,13 +448,20 @@ data class SkillCount(val skill: String, val n: Int)
 
 data class WordCount(val wordId: Long, val n: Int)
 
+data class SkillRow(val skill: String, val words: Int, val meanBox: Double, val lapses: Int)
+
+data class TroubleRow(val wordId: Long, val lapses: Int, val box: Int, val skills: Int)
+
+data class WordTrouble(val wordId: Long, val lapses: Int, val reviews: Int)
+
 data class StateCount(val state: String, val n: Int)
 
 @Database(
     entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class,
                 CardState::class, CharacterState::class, Composition::class,
-                MadePassage::class, MadeLine::class, MadeQuestion::class],
-    version = 7,
+                MadePassage::class, MadeLine::class, MadeQuestion::class,
+                Slip::class],
+    version = 8,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -494,6 +584,23 @@ abstract class ProgressDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS slip (
+                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                         ts INTEGER NOT NULL,
+                         word_id INTEGER NOT NULL,
+                         skill TEXT NOT NULL,
+                         type_id TEXT NOT NULL,
+                         chose TEXT,
+                         expected TEXT
+                       )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_slip_word ON slip(word_id)")
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
@@ -503,7 +610,7 @@ abstract class ProgressDb : RoomDatabase() {
                 // Version 2 only adds user_word; Room handles that automatically
                 // once the migration is declared.
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7)
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
                 .also { instance = it }
         }

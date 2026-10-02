@@ -46,6 +46,7 @@ import io.tr8.yybijika.ui.AppViewModel
 import io.tr8.yybijika.ui.BrowseScreen
 import io.tr8.yybijika.ui.CardsScreen
 import io.tr8.yybijika.ui.CharacterScreen
+import io.tr8.yybijika.ui.DiagnosisScreen
 import io.tr8.yybijika.ui.HomeScreen
 import io.tr8.yybijika.ui.QuizScreen
 import io.tr8.yybijika.ui.ReadScreen
@@ -72,7 +73,7 @@ private enum class Tab(val label: String, val zh: String, val icon: ImageVector)
 
 /** Screens pushed on top of a tab rather than being one. */
 private enum class Overlay { NONE, SESSION, QUIZ_RUN, BROWSE, DETAIL, CHARACTER,
-    SETTINGS, ADD, WRITING, ADD_SONG }
+    SETTINGS, ADD, WRITING, ADD_SONG, DIAGNOSIS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -168,6 +169,7 @@ private fun App(vm: AppViewModel) {
     val songLyrics by vm.songLyrics.collectAsState()
     val songWorking by vm.songWorking.collectAsState()
     val songError by vm.songError.collectAsState()
+    val diagnosis by vm.diagnosis.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
@@ -218,6 +220,7 @@ private fun App(vm: AppViewModel) {
                                 Overlay.DETAIL -> detail?.first?.hanzi.orEmpty()
                                 Overlay.CHARACTER -> character?.first?.hanzi.orEmpty()
                                 Overlay.WRITING -> "Your writing"
+                                Overlay.DIAGNOSIS -> "How you are doing"
                                 Overlay.ADD_SONG -> "Add a song"
                                 Overlay.SETTINGS -> "Settings"
                                 Overlay.NONE -> ""
@@ -318,6 +321,18 @@ private fun App(vm: AppViewModel) {
                         onOpenSettings = { overlay = Overlay.SETTINGS },
                     )
 
+                    Overlay.DIAGNOSIS -> DiagnosisScreen(
+                        diagnosis = diagnosis,
+                        onOpenWord = {
+                            vm.openWordByHanzi(it)
+                            detailFrom = Overlay.DIAGNOSIS
+                            overlay = Overlay.DETAIL
+                        },
+                        onOpenCharacter = {
+                            vm.openCharacter(it); overlay = Overlay.CHARACTER
+                        },
+                    )
+
                     Overlay.ADD_SONG -> AddSongScreen(
                         title = songTitle,
                         lyrics = songLyrics,
@@ -371,6 +386,9 @@ private fun App(vm: AppViewModel) {
                         onSettings = { overlay = Overlay.SETTINGS },
                         onAddNotes = { overlay = Overlay.ADD },
                         onWriting = { vm.loadWriting(); overlay = Overlay.WRITING },
+                        onDiagnosis = {
+                            vm.loadDiagnosis(); overlay = Overlay.DIAGNOSIS
+                        },
                         writtenCount = settings.writtenCount,
                         onDownloadUpdate = vm::downloadUpdate,
                         onInstallUpdate = vm::installUpdate,
