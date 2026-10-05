@@ -289,6 +289,8 @@ private fun App(vm: AppViewModel) {
                         onSpeak = vm::speak,
                         onSubmit = vm::submitWriting,
                         onFlag = vm::flagCurrent,
+                        onKeepGoing = vm::keepGoing,
+                        onStopHere = vm::stopHere,
                         onDone = { overlay = Overlay.NONE },
                         audio = audio,
                         onToggleAudio = vm::setAudioEnabled,

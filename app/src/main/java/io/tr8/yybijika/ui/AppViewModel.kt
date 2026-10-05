@@ -34,6 +34,7 @@ import io.tr8.yybijika.learn.Vitality
 import io.tr8.yybijika.remind.ReminderScheduler
 import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
+import io.tr8.yybijika.learn.Load
 import io.tr8.yybijika.learn.Scheduler
 import io.tr8.yybijika.learn.SessionBuilder
 import io.tr8.yybijika.learn.SessionItem
@@ -144,6 +145,21 @@ data class SessionState(
      * that one still asks the learner.
      */
     val wasCorrect: Boolean? = null,
+    /**
+     * Questions actually answered, retries included.
+     *
+     * Separate from [total], which is how long the sitting was meant to be: a
+     * session left early has to be reported against what was attempted, or
+     * stopping after three questions reads as "0 of 16" — a score for twelve
+     * questions nobody was ever asked.
+     */
+    val answered: Int = 0,
+    /** Failures in a row, reset by any question answered. */
+    val missStreak: Int = 0,
+    /** A breather is on screen instead of the next question. */
+    val breather: String? = null,
+    /** Offered once a sitting: a second interruption would be nagging. */
+    val breatherOffered: Boolean = false,
 ) {
     val current: SessionItem? get() = items.getOrNull(index)
     val total: Int get() = maxOf(planned, items.size)
@@ -480,6 +496,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadDiagnosis() = viewModelScope.launch {
         _diagnosis.value = repo.diagnose()
+    }
+
+    /** Carry on from the breather. The easier question is already next. */
+    fun keepGoing() = _session.update { it.copy(breather = null) }
+
+    /**
+     * Stop here, and keep what the sitting earned.
+     *
+     * Everything answered has already been written to the schedule question by
+     * question, so leaving early costs nothing but the questions not asked —
+     * which is the point of offering it.
+     */
+    fun stopHere() = viewModelScope.launch {
+        _session.update { it.copy(breather = null, finished = true) }
+        refresh()
     }
 
     // ---- flags -----------------------------------------------------------
@@ -1023,11 +1054,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         // A failure goes back into the queue a few questions further on, so the
         // correction is actually produced rather than merely read.
-        val queue = if (grade == Grade.AGAIN) {
+        val requeued = if (grade == Grade.AGAIN) {
             SessionBuilder.requeue(state.items, state.index, item)
         } else {
             state.items
         }
+
+        // Three in a row is the app's only reading of how this sitting is
+        // actually going: the schedule knows what happened on other days and
+        // nothing about this minute. Offered once, so it is a question rather
+        // than a nag — and the next item is made an easier one either way,
+        // because somebody who carries on deserves the gentler landing too.
+        val missStreak = if (grade == Grade.AGAIN) state.missStreak + 1 else 0
+        val wobbling = Load.struggling(missStreak) && !state.breatherOffered
+        val queue = if (wobbling) Load.ease(requeued, state.index) else requeued
         val atEnd = state.index + 1 >= queue.size
 
         _session.value = state.copy(
@@ -1047,6 +1087,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // has already been counted, and counting it twice would let a bad
             // session finish early.
             settled = state.settled + if (grade != Grade.AGAIN && !item.isRetry) 1 else 0,
+            answered = state.answered + 1,
+            missStreak = missStreak,
+            // Not at the very end: offering a rest on the last question is an
+            // interruption rather than a kindness.
+            breather = if (wobbling && !atEnd) {
+                Load.wording(missStreak, state.settled)
+            } else {
+                null
+            },
+            breatherOffered = state.breatherOffered || wobbling,
             finished = atEnd,
         )
         if (atEnd) refresh()

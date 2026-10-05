@@ -70,6 +70,8 @@ fun SessionScreen(
     onSpeak: (String) -> Unit,
     onSubmit: () -> Unit,
     onFlag: (FlagReason, String?) -> Unit,
+    onKeepGoing: () -> Unit,
+    onStopHere: () -> Unit,
     onDone: () -> Unit,
     audio: AudioState,
     onToggleAudio: (Boolean) -> Unit,
@@ -83,6 +85,13 @@ fun SessionScreen(
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
+        return
+    }
+
+    // Three failures in a row, and the app says so instead of dealing out a
+    // fourth question as though nothing had happened.
+    state.breather?.let { message ->
+        Breather(message, state.settled, onKeepGoing, onStopHere)
         return
     }
 
@@ -523,8 +532,14 @@ private fun SessionDone(state: SessionState, onDone: () -> Unit) {
             )
         } else {
             Text("Done", style = MaterialTheme.typography.headlineMedium)
-            Text("${state.correct} of ${state.total} correct",
-                style = MaterialTheme.typography.titleMedium)
+            // Against what was actually answered, not against how long the
+            // sitting was meant to be — somebody who stops after three
+            // questions has not got twelve of them wrong.
+            Text(
+                if (state.answered == 0) "Nothing answered this time"
+                else "${state.correct} of ${state.answered} correct",
+                style = MaterialTheme.typography.titleMedium,
+            )
             Text("+${state.earned} points",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary)
@@ -691,4 +706,57 @@ private fun FlagDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * The pause after a bad run.
+ *
+ * Both doors are real. Stopping keeps everything the sitting earned — answers
+ * are written to the schedule one at a time, so leaving early costs only the
+ * questions not asked — and carrying on gets an easier question, already moved
+ * to the front of what is left. What it must not do is pretend the run of
+ * failures did not happen: somebody who has just missed three knows it, and an
+ * encouraging line over the top would read as the app not having noticed.
+ */
+@Composable
+private fun Breather(
+    message: String,
+    done: Int,
+    onKeepGoing: () -> Unit,
+    onStopHere: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(28.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("Take a breath", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (done > 0) {
+            Text(
+                // What is already banked, because the decision being offered is
+                // whether to stop — and nobody stops gladly without knowing
+                // that the work so far is kept.
+                if (done == 1) "1 question is already counted, whatever you decide."
+                else "$done questions are already counted, whatever you decide.",
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onKeepGoing, modifier = Modifier.fillMaxWidth()) {
+            Text("Keep going — the next one is easier")
+        }
+        OutlinedButton(onClick = onStopHere, modifier = Modifier.fillMaxWidth()) {
+            Text("Stop for now")
+        }
+    }
 }
