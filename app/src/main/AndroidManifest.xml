@@ -42,5 +42,22 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!--
+          The home-screen plant. exported=false because nothing outside the app
+          has any business updating it; the launcher binds it through the
+          system, which does not need the flag.
+        -->
+        <receiver
+            android:name=".widget.DeckWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/deck_widget_info" />
+        </receiver>
+
     </application>
 </manifest>

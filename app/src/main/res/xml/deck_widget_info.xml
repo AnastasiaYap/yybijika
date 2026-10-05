@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The plant on the home screen.
+
+  Resizable because the launcher, not us, decides how much room it gets, and the
+  bamboo is drawn to fit whatever that turns out to be. The update period is
+  deliberately long: the plant changes by the day, not by the minute, and a
+  widget that wakes the device hourly to redraw the same picture is a battery
+  complaint waiting to happen. Fading is instead recomputed whenever the app
+  finishes a session, and once a day by the system.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="21600000"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_description"
+    android:previewLayout="@layout/deck_widget_preview"
+    android:initialLayout="@layout/deck_widget_preview" />

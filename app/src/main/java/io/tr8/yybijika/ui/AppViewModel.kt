@@ -25,7 +25,9 @@ import io.tr8.yybijika.exercise.WordBundle
 import io.tr8.yybijika.exercise.Exercise
 import io.tr8.yybijika.learn.CardDeck
 import io.tr8.yybijika.learn.Composer
+import io.tr8.yybijika.widget.WidgetNudge
 import io.tr8.yybijika.learn.Diagnosis
+import io.tr8.yybijika.learn.Vitality
 import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
@@ -198,6 +200,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * you look a word up is worse than one with no links at all.
      */
     /** A passage is being written; null when nothing is happening. */
+    private val _vitality = MutableStateFlow(Vitality.of(held = 0, due = 0, daysAway = 0))
+    val vitality: StateFlow<Vitality.State> = _vitality.asStateFlow()
+
     private val _diagnosis = MutableStateFlow<Diagnosis?>(null)
     val diagnosis: StateFlow<Diagnosis?> = _diagnosis.asStateFlow()
 
@@ -773,6 +778,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val bySkill = repo.dueBySkill()
         val xp = repo.totalXp()
         val streak = repo.streak()
+        // The plant is part of the home screen's state, so it refreshes with it
+        // — and that is also what makes it revive the moment a session ends.
+        _vitality.value = repo.vitality()
         _home.update {
             it.copy(
                 loading = false,
@@ -866,6 +874,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             finished = atEnd,
         )
         if (atEnd) refresh()
+        // The plant revives the moment the work is done, not six hours later.
+        WidgetNudge.refresh(getApplication())
     }
 
     /** The interval each button will schedule, shown on the button itself. */

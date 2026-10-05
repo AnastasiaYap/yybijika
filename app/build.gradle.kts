@@ -34,8 +34,8 @@ android {
         applicationId = "io.tr8.yybijika"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.19.0"
+        versionCode = 20
+        versionName = "0.20.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Where the in-app updater looks for new releases.
@@ -120,6 +120,8 @@ dependencies {
     ksp(libs.room.compiler)
 
     implementation(libs.coroutines.android)
+    implementation(libs.glance.appwidget)
+    implementation(libs.glance.material3)
     testImplementation(libs.junit)
     // Android stubs org.json in unit tests, so every call throws "not mocked".
     // The real implementation makes the release-parsing tests runnable on the JVM.

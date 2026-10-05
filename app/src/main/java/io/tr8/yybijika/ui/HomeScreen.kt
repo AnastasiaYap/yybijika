@@ -21,9 +21,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.tr8.yybijika.learn.Skill
+import io.tr8.yybijika.learn.Vitality
 import io.tr8.yybijika.learn.Xp
 import io.tr8.yybijika.ui.theme.HanziMedium
 
@@ -37,6 +39,7 @@ fun HomeScreen(
     onAddNotes: () -> Unit,
     onWriting: () -> Unit,
     onDiagnosis: () -> Unit,
+    vitality: Vitality.State,
     writtenCount: Int = 0,
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: () -> Unit,
@@ -72,6 +75,20 @@ fun HomeScreen(
             onInstall = onInstallUpdate,
             onGrantPermission = onGrantInstallPermission,
             onDismiss = onDismissUpdate,
+        )
+
+        // Above the fold on purpose. The whole reason the plant exists is to be
+        // seen without being looked for — put it below the deck figures and it
+        // is a picture nobody scrolls to, which is no use to anyone.
+        Bamboo(vitality, height = 118.dp)
+        Text(
+            if (vitality.held == 0) "Your bamboo grows as words stick."
+            else "${vitality.held} words held" +
+                if (vitality.thirsty) " · it could use a session" else "",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
         )
 
         LevelCard(state.totalXp, state.streak)

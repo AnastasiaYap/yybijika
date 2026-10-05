@@ -273,6 +273,19 @@ interface ProgressDao {
     @Query("SELECT COALESCE(SUM(box + lapses), 0) FROM mastery")
     suspend fun reviewTotal(): Int
 
+    /**
+     * Words genuinely held: at the given box or beyond in at least one skill.
+     *
+     * Distinct on the word, not the schedule — knowing 合同 by sight and by ear
+     * is one word learned twice over, not two words.
+     */
+    @Query("SELECT COUNT(DISTINCT wordId) FROM mastery WHERE box >= :box")
+    suspend fun heldWords(box: Int): Int
+
+    /** The most recent day with any review at all; null if there has never been one. */
+    @Query("SELECT MAX(date) FROM daily WHERE reviews > 0")
+    suspend fun lastStudiedDay(): Long?
+
     @Query(
         """SELECT skill,
                   COUNT(*) AS words,

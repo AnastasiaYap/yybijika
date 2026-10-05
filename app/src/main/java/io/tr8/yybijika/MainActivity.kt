@@ -170,6 +170,7 @@ private fun App(vm: AppViewModel) {
     val songWorking by vm.songWorking.collectAsState()
     val songError by vm.songError.collectAsState()
     val diagnosis by vm.diagnosis.collectAsState()
+    val vitality by vm.vitality.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
     // Granting install permission sends the user to system settings, so the only
@@ -389,6 +390,7 @@ private fun App(vm: AppViewModel) {
                         onDiagnosis = {
                             vm.loadDiagnosis(); overlay = Overlay.DIAGNOSIS
                         },
+                        vitality = vitality,
                         writtenCount = settings.writtenCount,
                         onDownloadUpdate = vm::downloadUpdate,
                         onInstallUpdate = vm::installUpdate,

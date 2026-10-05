@@ -9,6 +9,7 @@ import io.tr8.yybijika.learn.Diagnosis
 import io.tr8.yybijika.learn.SkillGap
 import io.tr8.yybijika.learn.TroubleCharacter
 import io.tr8.yybijika.learn.TroubleWord
+import io.tr8.yybijika.learn.Vitality
 import io.tr8.yybijika.learn.PassageCheck
 import io.tr8.yybijika.notes.DeepSeek
 import io.tr8.yybijika.exercise.ExampleSentence
@@ -296,6 +297,23 @@ class Repo(
 
     suspend fun pendingCount(): Int =
         withContext(Dispatchers.IO) { dao.unmarkedCompositions().size }
+
+    /**
+     * How the plant on the home screen is doing.
+     *
+     * Kept deliberately cheap: it is read by a widget, which Android may update
+     * while the app is not running and will not forgive a slow query.
+     */
+    suspend fun vitality(): Vitality.State = withContext(Dispatchers.IO) {
+        val last = dao.lastStudiedDay()
+        Vitality.of(
+            held = dao.heldWords(Vitality.HELD_BOX),
+            due = dao.dueCount(today()),
+            // Never studied at all: show it fresh rather than already wilting.
+            // A plant that is dying before the first session is an odd welcome.
+            daysAway = if (last == null) 0 else (today() - last).toInt(),
+        )
+    }
 
     /**
      * What is going wrong, read back out of everything already recorded.
