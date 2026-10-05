@@ -88,6 +88,40 @@ data class Slip(
     val expected: String? = null,
 )
 
+/**
+ * A card the learner says is wrong.
+ *
+ * The deck is one person's notes, typed over months, and some of it is simply
+ * mistaken — a gloss that does not fit, a reading that is off, an example that
+ * uses the word a way nobody would. Until now there was nothing to do about it
+ * mid-session except remember and hope: the answer stays wrong, and being
+ * marked against it teaches the error.
+ *
+ * Lives here rather than in content.db because content.db is read-only and
+ * replaced by every release, and the whole point is that a flag survives until
+ * the note behind it is actually fixed.
+ */
+@Entity(
+    tableName = "card_flag",
+    indices = [Index(value = ["word_id"], name = "idx_flag_word")],
+)
+data class CardFlag(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "word_id") val wordId: Long,
+    /** Copied rather than joined: the word may be gone by the time this is read. */
+    val hanzi: String,
+    val pinyin: String,
+    /** One of [io.tr8.yybijika.learn.FlagReason]. */
+    val reason: String,
+    @ColumnInfo(name = "type_id") val typeId: String?,
+    /** What the card actually said, so the report is readable months later. */
+    val shown: String?,
+    val note: String? = null,
+    @ColumnInfo(name = "flagged_at") val flaggedAt: Long,
+    /** Set when the note behind it has been corrected; null while still open. */
+    @ColumnInfo(name = "fixed_at") val fixedAt: Long? = null,
+)
+
 @Entity(tableName = "user_word")
 data class UserWord(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -253,6 +287,26 @@ interface ProgressDao {
     @Query("SELECT * FROM slip WHERE word_id = :wordId ORDER BY ts DESC LIMIT :limit")
     suspend fun slipsFor(wordId: Long, limit: Int = 12): List<Slip>
 
+    @Insert
+    suspend fun flag(flag: CardFlag)
+
+    /** Everything still waiting to be fixed, newest first. */
+    @Query("SELECT * FROM card_flag WHERE fixed_at IS NULL ORDER BY flagged_at DESC")
+    suspend fun openFlags(): List<CardFlag>
+
+    @Query("SELECT COUNT(*) FROM card_flag WHERE fixed_at IS NULL")
+    suspend fun openFlagCount(): Int
+
+    @Query("UPDATE card_flag SET fixed_at = :ts WHERE id = :id")
+    suspend fun markFlagFixed(id: Long, ts: Long)
+
+    @Query("DELETE FROM card_flag WHERE id = :id")
+    suspend fun dropFlag(id: Long)
+
+    /** Words with an open flag, so a doubted card can be kept out of a session. */
+    @Query("SELECT DISTINCT word_id FROM card_flag WHERE fixed_at IS NULL")
+    suspend fun flaggedWordIds(): List<Long>
+
     /**
      * How each skill is going: how many words have been met in it, how far
      * along they are on average, and how often they are lost.
@@ -331,18 +385,33 @@ interface ProgressDao {
      * three weeks outranks a recognition card that came due this morning, which
      * is what keeps the weaker skill from being quietly starved.
      */
+    /**
+     * What is due, minus anything the learner has reported as wrong.
+     *
+     * The exclusion lives in the SQL rather than in the caller because three
+     * queries answer "what is due" — the session, the count on Home, and the
+     * per-skill breakdown — and a count that promises a session the builder
+     * will then refuse to produce is worse than either answer on its own.
+     */
     @Query(
         """SELECT * FROM mastery
-           WHERE due_at <= :today
+           WHERE due_at <= :today AND wordId NOT IN (SELECT word_id FROM card_flag WHERE fixed_at IS NULL)
            ORDER BY due_at ASC, box ASC
            LIMIT :limit"""
     )
     suspend fun due(today: Long, limit: Int): List<Mastery>
 
-    @Query("SELECT COUNT(*) FROM mastery WHERE due_at <= :today")
+    @Query(
+        """SELECT COUNT(*) FROM mastery
+           WHERE due_at <= :today AND wordId NOT IN (SELECT word_id FROM card_flag WHERE fixed_at IS NULL)"""
+    )
     suspend fun dueCount(today: Long): Int
 
-    @Query("SELECT skill, COUNT(*) AS n FROM mastery WHERE due_at <= :today GROUP BY skill")
+    @Query(
+        """SELECT skill, COUNT(*) AS n FROM mastery
+           WHERE due_at <= :today AND wordId NOT IN (SELECT word_id FROM card_flag WHERE fixed_at IS NULL)
+           GROUP BY skill"""
+    )
     suspend fun dueBySkill(today: Long): List<SkillCount>
 
     @Query("SELECT DISTINCT wordId FROM mastery")
@@ -477,8 +546,8 @@ data class StateCount(val state: String, val n: Int)
     entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class,
                 CardState::class, CharacterState::class, Composition::class,
                 MadePassage::class, MadeLine::class, MadeQuestion::class,
-                Slip::class],
-    version = 8,
+                Slip::class, CardFlag::class],
+    version = 9,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -618,6 +687,33 @@ abstract class ProgressDb : RoomDatabase() {
             }
         }
 
+        /**
+         * Flags: a card the learner says is wrong.
+         *
+         * The index is declared on the entity too — Room checks the schema it
+         * finds against the annotations at launch, on an existing database,
+         * which is the worst possible place to discover a mismatch.
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS card_flag (
+                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                         word_id INTEGER NOT NULL,
+                         hanzi TEXT NOT NULL,
+                         pinyin TEXT NOT NULL,
+                         reason TEXT NOT NULL,
+                         type_id TEXT,
+                         shown TEXT,
+                         note TEXT,
+                         flagged_at INTEGER NOT NULL,
+                         fixed_at INTEGER
+                       )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_flag_word ON card_flag(word_id)")
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
@@ -627,7 +723,7 @@ abstract class ProgressDb : RoomDatabase() {
                 // Version 2 only adds user_word; Room handles that automatically
                 // once the migration is declared.
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .build()
                 .also { instance = it }
         }

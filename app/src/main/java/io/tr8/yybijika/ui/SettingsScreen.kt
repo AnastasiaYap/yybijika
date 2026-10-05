@@ -67,6 +67,8 @@ data class SettingsState(
     val notificationsAllowed: Boolean = true,
     val palette: Palette = Palette.CINNABAR,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Cards reported wrong and not yet corrected. */
+    val flagCount: Int = 0,
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -92,6 +94,7 @@ fun SettingsScreen(
     onRemindTime: (Int, Int) -> Unit,
     onAddWidget: () -> Unit,
     canPinWidget: Boolean,
+    onOpenFlags: () -> Unit,
     onPalette: (Palette) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
 ) {
@@ -405,6 +408,16 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            // Shown even at zero, so the flag in a session leads somewhere the
+            // learner has already seen rather than into a screen they have to
+            // discover afterwards.
+            OutlinedButton(onClick = onOpenFlags) {
+                Text(
+                    if (state.flagCount == 0) "Cards you flagged"
+                    else "Cards you flagged (${state.flagCount})"
+                )
+            }
         }
     }
 }

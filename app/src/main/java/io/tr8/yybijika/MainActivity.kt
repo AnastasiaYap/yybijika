@@ -47,6 +47,7 @@ import io.tr8.yybijika.ui.BrowseScreen
 import io.tr8.yybijika.ui.CardsScreen
 import io.tr8.yybijika.ui.CharacterScreen
 import io.tr8.yybijika.ui.DiagnosisScreen
+import io.tr8.yybijika.ui.FlagsScreen
 import io.tr8.yybijika.ui.HomeScreen
 import io.tr8.yybijika.ui.QuizScreen
 import io.tr8.yybijika.ui.ReadScreen
@@ -74,7 +75,7 @@ private enum class Tab(val label: String, val zh: String, val icon: ImageVector)
 
 /** Screens pushed on top of a tab rather than being one. */
 private enum class Overlay { NONE, SESSION, QUIZ_RUN, BROWSE, DETAIL, CHARACTER,
-    SETTINGS, ADD, WRITING, ADD_SONG, DIAGNOSIS }
+    SETTINGS, ADD, WRITING, ADD_SONG, DIAGNOSIS, FLAGS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -190,6 +191,7 @@ private fun App(vm: AppViewModel) {
     val songWorking by vm.songWorking.collectAsState()
     val songError by vm.songError.collectAsState()
     val diagnosis by vm.diagnosis.collectAsState()
+    val flags by vm.flags.collectAsState()
     val vitality by vm.vitality.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
 
@@ -242,6 +244,7 @@ private fun App(vm: AppViewModel) {
                                 Overlay.CHARACTER -> character?.first?.hanzi.orEmpty()
                                 Overlay.WRITING -> "Your writing"
                                 Overlay.DIAGNOSIS -> "How you are doing"
+                                Overlay.FLAGS -> "Cards you flagged"
                                 Overlay.ADD_SONG -> "Add a song"
                                 Overlay.SETTINGS -> "Settings"
                                 Overlay.NONE -> ""
@@ -285,6 +288,7 @@ private fun App(vm: AppViewModel) {
                         onGrade = vm::grade,
                         onSpeak = vm::speak,
                         onSubmit = vm::submitWriting,
+                        onFlag = vm::flagCurrent,
                         onDone = { overlay = Overlay.NONE },
                         audio = audio,
                         onToggleAudio = vm::setAudioEnabled,
@@ -354,6 +358,17 @@ private fun App(vm: AppViewModel) {
                         },
                     )
 
+                    Overlay.FLAGS -> FlagsScreen(
+                        flags = flags,
+                        onFixed = vm::flagFixed,
+                        onRemove = vm::unflag,
+                        onOpenWord = {
+                            vm.openWordByHanzi(it)
+                            detailFrom = Overlay.FLAGS
+                            overlay = Overlay.DETAIL
+                        },
+                    )
+
                     Overlay.ADD_SONG -> AddSongScreen(
                         title = songTitle,
                         lyrics = songLyrics,
@@ -401,6 +416,7 @@ private fun App(vm: AppViewModel) {
                         },
                         onRemindTime = vm::setRemindTime,
                         onAddWidget = { PinWidget.request(context) },
+                        onOpenFlags = { vm.loadFlags(); overlay = Overlay.FLAGS },
                         canPinWidget = PinWidget.isSupported(context),
                         onPalette = vm::setPalette,
                         onThemeMode = vm::setThemeMode,

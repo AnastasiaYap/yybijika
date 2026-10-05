@@ -27,6 +27,8 @@ import io.tr8.yybijika.learn.CardDeck
 import io.tr8.yybijika.learn.Composer
 import io.tr8.yybijika.widget.WidgetNudge
 import io.tr8.yybijika.learn.Diagnosis
+import io.tr8.yybijika.learn.FlagReason
+import io.tr8.yybijika.learn.FlaggedCard
 import androidx.core.app.NotificationManagerCompat
 import io.tr8.yybijika.learn.Vitality
 import io.tr8.yybijika.remind.ReminderScheduler
@@ -234,6 +236,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _diagnosis = MutableStateFlow<Diagnosis?>(null)
     val diagnosis: StateFlow<Diagnosis?> = _diagnosis.asStateFlow()
 
+    private val _flags = MutableStateFlow<List<FlaggedCard>>(emptyList())
+    val flags: StateFlow<List<FlaggedCard>> = _flags.asStateFlow()
+
     private val _songs = MutableStateFlow<List<Passage>>(emptyList())
     val songs: StateFlow<List<Passage>> = _songs.asStateFlow()
 
@@ -341,6 +346,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 .from(getApplication()).areNotificationsEnabled(),
             palette = settings.palette,
             themeMode = settings.themeMode,
+            flagCount = repo.openFlagCount(),
         )
     }
 
@@ -474,6 +480,61 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadDiagnosis() = viewModelScope.launch {
         _diagnosis.value = repo.diagnose()
+    }
+
+    // ---- flags -----------------------------------------------------------
+
+    fun loadFlags() = viewModelScope.launch {
+        _flags.value = repo.openFlags()
+    }
+
+    /**
+     * Report the card on screen, and move past it without grading it.
+     *
+     * Not graded, because a card you are reporting is not a card you failed:
+     * recording a lapse here would push the word down the ladder for the deck's
+     * mistake. Any copy of the same word waiting further down the queue goes
+     * with it — being asked the doubted question twice in one session is the
+     * exact thing the flag was pressed to stop.
+     */
+    fun flagCurrent(reason: FlagReason, note: String?) = viewModelScope.launch {
+        val state = _session.value
+        val item = state.current ?: return@launch
+        repo.flagCard(item, reason, note)
+
+        val queue = SessionBuilder.dropFrom(state.items, state.index, item.exercise.word.id)
+        val atEnd = state.index + 1 >= queue.size
+        _session.value = state.copy(
+            items = queue,
+            index = state.index + 1,
+            revealed = false,
+            chosen = null,
+            typed = "",
+            assembled = emptyList(),
+            checking = false,
+            critique = null,
+            wasCorrect = null,
+            // The bar still moves. A reported card is dealt with, and a
+            // progress bar that stalls on it would read as a penalty for
+            // saying so.
+            settled = state.settled + if (!item.isRetry) 1 else 0,
+            finished = atEnd,
+        )
+        if (atEnd) refresh()
+        refreshSettings()
+    }
+
+    /** The note behind it has been corrected; the word comes back into rotation. */
+    fun flagFixed(id: Long) = viewModelScope.launch {
+        repo.flagFixed(id)
+        _flags.value = repo.openFlags()
+        refreshSettings()
+    }
+
+    fun unflag(id: Long) = viewModelScope.launch {
+        repo.unflag(id)
+        _flags.value = repo.openFlags()
+        refreshSettings()
     }
 
     fun loadWriting() = viewModelScope.launch {

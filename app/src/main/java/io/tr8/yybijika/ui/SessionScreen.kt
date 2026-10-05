@@ -17,12 +17,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -44,6 +47,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.tr8.yybijika.exercise.Exercise
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Flag
+import io.tr8.yybijika.learn.FlagReason
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.SessionItem
 import io.tr8.yybijika.ui.theme.HanziHero
@@ -63,6 +69,7 @@ fun SessionScreen(
     onGrade: (Grade) -> Unit,
     onSpeak: (String) -> Unit,
     onSubmit: () -> Unit,
+    onFlag: (FlagReason, String?) -> Unit,
     onDone: () -> Unit,
     audio: AudioState,
     onToggleAudio: (Boolean) -> Unit,
@@ -77,6 +84,15 @@ fun SessionScreen(
             CircularProgressIndicator()
         }
         return
+    }
+
+    var reporting by remember { mutableStateOf(false) }
+    if (reporting) {
+        FlagDialog(
+            hanzi = item.exercise.word.hanzi,
+            onDismiss = { reporting = false },
+            onFlag = { reason, note -> reporting = false; onFlag(reason, note) },
+        )
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -104,6 +120,16 @@ fun SessionScreen(
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // One tap to say the card itself is wrong. It lives in the
+                // header rather than beside the grade buttons because it is
+                // not a grade: the deck is being reported, not the learner.
+                IconButton(onClick = { reporting = true }) {
+                    Icon(
+                        Icons.Outlined.Flag,
+                        "Something's off with this card",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 // Muting mid-session is allowed, and takes effect on the next
                 // question rather than retroactively: the one on screen has
                 // already spoken, and silently re-grading it would be worse.
@@ -604,4 +630,65 @@ private fun ComposeBody(
             }
         }
     }
+}
+
+/**
+ * "Something's off with this card."
+ *
+ * Five reasons rather than a free-text box alone, because a list of typed
+ * complaints months old is hard to act on, where "the pinyin is wrong" sorts
+ * straight into a job. The note is there for the half of cases where the reason
+ * is not enough — and optional, because a flag that takes a paragraph to file
+ * is a flag nobody files mid-session.
+ */
+@Composable
+private fun FlagDialog(
+    hanzi: String,
+    onDismiss: () -> Unit,
+    onFlag: (FlagReason, String?) -> Unit,
+) {
+    var reason by remember { mutableStateOf(FlagReason.MEANING) }
+    var note by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("What's wrong with $hanzi?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                FlagReason.entries.forEach { option ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { reason = option },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = reason == option, onClick = { reason = option })
+                        Text(option.label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("What it should say (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                )
+                Text(
+                    // Said plainly, because both halves are the reason to press
+                    // it: nothing is held against the word, and it stops coming
+                    // back until the note is fixed.
+                    "This question won't be marked, and the word is set aside " +
+                        "until you fix the note.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onFlag(reason, note.takeIf { it.isNotBlank() }) }) {
+                Text("Report it")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

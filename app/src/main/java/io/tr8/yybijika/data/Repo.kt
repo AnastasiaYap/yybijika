@@ -6,6 +6,8 @@ import io.tr8.yybijika.exercise.Exercise
 import io.tr8.yybijika.learn.Composer
 import io.tr8.yybijika.learn.CharacterLift
 import io.tr8.yybijika.learn.Diagnosis
+import io.tr8.yybijika.learn.FlagReason
+import io.tr8.yybijika.learn.FlaggedCard
 import io.tr8.yybijika.learn.SkillGap
 import io.tr8.yybijika.learn.TroubleCharacter
 import io.tr8.yybijika.learn.TroubleWord
@@ -748,6 +750,16 @@ class Repo(
         distractorCache.clear()
         rotations = dao.reviewCounts().associate { it.wordId to it.n }
 
+        // A card the learner has said is wrong is kept out until the note
+        // behind it is fixed. Drilling a word against a gloss both of you know
+        // to be wrong is worse than not drilling it at all — the schedule would
+        // keep bringing it back, and each repetition teaches the error.
+        //
+        // Due rows arrive already filtered, by the same clause that feeds the
+        // count on Home; new words have never been scheduled, so they are
+        // filtered here.
+        val doubted = dao.flaggedWordIds().toSet()
+
         val dueRows = dao.due(today(), size * 2)
         val due = dueRows.map {
             SessionBuilder.Due(it.wordId, skillFromKey(it.skill), it.box, it.dueAt)
@@ -758,7 +770,7 @@ class Repo(
 
         val seen = dao.seenWordIds().toSet()
         val unseen = (content.allWordIds() + added.map { it.id })
-            .filter { it !in seen }
+            .filter { it !in seen && it !in doubted }
             .shuffled()
 
         val needed = if (onlyType != null) {
@@ -776,6 +788,87 @@ class Repo(
             needed.mapNotNull { addedById[it] }).associateBy { it.id }
 
         SessionBuilder.build(size, due, unseen, bundles, deckContext, Random.Default, onlyType)
+    }
+
+    // ----------------------------------------------------------------------
+    // Flags
+    // ----------------------------------------------------------------------
+
+    /**
+     * Note that a card is wrong.
+     *
+     * Deliberately does not touch the schedule. A card you are reporting is not
+     * one you failed, and recording a lapse for it would push a word down the
+     * ladder for the deck's mistake rather than the learner's.
+     */
+    suspend fun flagCard(
+        item: SessionItem,
+        reason: FlagReason,
+        note: String?,
+    ) = withContext(Dispatchers.IO) {
+        val word = item.exercise.word
+        dao.flag(
+            CardFlag(
+                wordId = word.id,
+                hanzi = word.hanzi,
+                pinyin = word.pinyin,
+                reason = reason.id,
+                typeId = item.exercise.typeId,
+                shown = shownText(item.exercise),
+                note = note?.trim()?.takeIf { it.isNotEmpty() },
+                flaggedAt = System.currentTimeMillis(),
+            )
+        )
+    }
+
+    suspend fun openFlags(): List<FlaggedCard> = withContext(Dispatchers.IO) {
+        dao.openFlags().map {
+            FlaggedCard(
+                id = it.id,
+                wordId = it.wordId,
+                hanzi = it.hanzi,
+                pinyin = it.pinyin,
+                reason = FlagReason.of(it.reason),
+                shown = it.shown,
+                note = it.note,
+                at = it.flaggedAt,
+            )
+        }
+    }
+
+    suspend fun openFlagCount(): Int = withContext(Dispatchers.IO) { dao.openFlagCount() }
+
+    /**
+     * The note has been corrected, so the word goes back into circulation.
+     *
+     * Kept rather than deleted: the row is the record that the deck was wrong
+     * here once, which is worth having when the same word reads oddly again.
+     */
+    suspend fun flagFixed(id: Long) = withContext(Dispatchers.IO) {
+        dao.markFlagFixed(id, System.currentTimeMillis())
+    }
+
+    /** Flagged by mistake — removed outright, with nothing to remember. */
+    suspend fun unflag(id: Long) = withContext(Dispatchers.IO) { dao.dropFlag(id) }
+
+    /**
+     * What the card actually said.
+     *
+     * Stored as text at the moment of flagging rather than rebuilt later: the
+     * question is generated from rotating examples and shuffled choices, so the
+     * card that was wrong is not necessarily the card that would be built from
+     * the same word tomorrow.
+     */
+    private fun shownText(ex: Exercise): String = when (ex) {
+        is Exercise.Flashcard -> "${ex.front} → ${ex.back}"
+        is Exercise.MultipleChoice ->
+            "${ex.prompt} → ${ex.choices.getOrNull(ex.answerIndex).orEmpty()}"
+        is Exercise.Cloze ->
+            "${ex.sentenceBefore}[${ex.answer}]${ex.sentenceAfter}" +
+                (ex.gloss?.let { "  ($it)" } ?: "")
+        is Exercise.Typing -> "${ex.prompt} → ${ex.answer}"
+        is Exercise.TileBuilder -> "${ex.prompt} → ${ex.solution.joinToString("")}"
+        is Exercise.Compose -> ex.situation
     }
 
     /**

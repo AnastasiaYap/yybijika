@@ -153,6 +153,23 @@ object SessionBuilder {
     }
 
     /**
+     * Take a word out of the rest of the queue.
+     *
+     * Used when a card is reported as wrong: the question on screen is being
+     * walked away from, and any copy of the same word waiting further down —
+     * a retry, or a second skill — would ask the doubted question again inside
+     * the same session, which is the thing the flag was pressed to stop.
+     *
+     * Everything up to and including [at] is left alone. Those questions have
+     * already been answered, and rewriting history under the index would make
+     * the current card change identity mid-tap.
+     */
+    fun dropFrom(queue: List<SessionItem>, at: Int, wordId: Long): List<SessionItem> =
+        queue.filterIndexed { i, item ->
+            i <= at || item.exercise.word.id != wordId
+        }
+
+    /**
      * Give the session a beginning, a middle and an end.
      *
      * Strictly most-overdue-first means a bad fortnight opens with five things
