@@ -33,6 +33,7 @@ import io.tr8.yybijika.remind.ReminderScheduler
 import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
+import io.tr8.yybijika.learn.SessionBuilder
 import io.tr8.yybijika.learn.SessionItem
 import io.tr8.yybijika.learn.Skill
 import io.tr8.yybijika.learn.Xp
@@ -107,6 +108,10 @@ data class CardsState(
 }
 
 data class SessionState(
+    /**
+     * The working queue, not a fixed list: a failed item is pushed back in a
+     * few places further on, so the session can grow as it goes.
+     */
     val items: List<SessionItem> = emptyList(),
     val index: Int = 0,
     val revealed: Boolean = false,
@@ -120,10 +125,31 @@ data class SessionState(
     val earned: Int = 0,
     val correct: Int = 0,
     val finished: Boolean = false,
+    /**
+     * How many questions were planned, before any retries were added.
+     *
+     * Progress is measured against this rather than against the live queue, or
+     * failing a question would make the bar jump backwards — which reads as
+     * punishment for being wrong, exactly when it should not.
+     */
+    val planned: Int = 0,
+    /** Questions settled first time, so progress never counts a retry twice. */
+    val settled: Int = 0,
+    /**
+     * Whether the last answer was objectively right.
+     *
+     * Null where the app cannot tell — a flashcard has no answer to check, so
+     * that one still asks the learner.
+     */
+    val wasCorrect: Boolean? = null,
 ) {
     val current: SessionItem? get() = items.getOrNull(index)
-    val total: Int get() = items.size
-    val progress: Float get() = if (items.isEmpty()) 0f else index.toFloat() / items.size
+    val total: Int get() = maxOf(planned, items.size)
+    val progress: Float get() =
+        if (planned == 0) 0f else (settled.toFloat() / planned).coerceIn(0f, 1f)
+
+    /** True when the app graded this itself and is only waiting to be let on. */
+    val selfGraded: Boolean get() = wasCorrect != null
 }
 
 /**
@@ -362,7 +388,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val setup = _quiz.value
         _session.value = SessionState()
         val items = repo.buildSession(setup.length, setup.selected)
-        _session.value = SessionState(items = items, finished = items.isEmpty())
+        _session.value = SessionState(
+            items = items, planned = items.size, finished = items.isEmpty(),
+        )
     }
 
     // ---- the swipe deck ---------------------------------------------------
@@ -807,13 +835,75 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun startSession(size: Int = settings.sessionSize) = viewModelScope.launch {
         _session.value = SessionState()
         val items = repo.buildSession(size)
-        _session.value = SessionState(items = items, finished = items.isEmpty())
+        _session.value = SessionState(
+            items = items, planned = items.size, finished = items.isEmpty(),
+        )
     }
 
-    fun reveal() = _session.update { it.copy(revealed = true) }
+    /**
+     * Whether the app can mark this itself.
+     *
+     * A flashcard cannot be marked: there is no answer to compare against, only
+     * the learner's own sense of whether they knew it. Everything else has a
+     * right answer on file, and asking somebody to rate themselves a second
+     * after seeing it collects a judgement that is mostly noise — and that noise
+     * then sets their review intervals.
+     */
+    private fun objectiveResult(state: SessionState): Boolean? {
+        val item = state.current ?: return null
+        return when (val ex = item.exercise) {
+            is Exercise.MultipleChoice -> state.chosen == ex.answerIndex
+            is Exercise.Cloze -> state.chosen == ex.answerIndex
+            is Exercise.Typing -> state.typed.trim() == ex.answer
+            is Exercise.TileBuilder ->
+                state.assembled.map { ex.tiles[it] } == ex.solution
+            // Writing is marked by Composer and DeepSeek, not here.
+            is Exercise.Compose -> null
+            is Exercise.Flashcard -> null
+        }
+    }
 
-    fun choose(index: Int) = _session.update {
-        if (it.revealed) it else it.copy(chosen = index, revealed = true)
+    /**
+     * Reveal, and mark it where the app can.
+     *
+     * Used by the types where the learner assembles or types an answer and then
+     * submits it; the multiple choices come through [choose] instead.
+     */
+    fun reveal() {
+        val state = _session.value
+        val correct = objectiveResult(state.copy(revealed = true))
+        _session.value = state.copy(revealed = true, wasCorrect = correct)
+        if (correct == true) advanceAfterPause()
+    }
+
+    fun choose(index: Int) {
+        val state = _session.value
+        if (state.revealed) return
+        val answered = state.copy(chosen = index, revealed = true)
+        val correct = objectiveResult(answered)
+        _session.value = answered.copy(wasCorrect = correct)
+        if (correct == true) advanceAfterPause()
+    }
+
+    /**
+     * Move on by itself when the answer was right.
+     *
+     * The rule is meant to be learnable in one sentence: right moves on, wrong
+     * waits for you. It matches what a patient tutor does — no ceremony for the
+     * ones you know, all the time in the world for the ones you do not — and it
+     * halves the taps in a session for anybody doing well.
+     *
+     * Long enough to see the answer turn green, short enough not to feel like
+     * waiting.
+     */
+    private fun advanceAfterPause() = viewModelScope.launch {
+        val at = _session.value.index
+        kotlinx.coroutines.delay(850)
+        // Only if nothing else has moved in the meantime — the learner may have
+        // tapped on themselves, or left the session entirely.
+        if (_session.value.index == at && _session.value.wasCorrect == true) {
+            grade(Grade.GOOD)
+        }
     }
 
     fun type(text: String) = _session.update { it.copy(typed = text) }
@@ -869,19 +959,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         val points = repo.answer(item, grade, state.combo, chose, expected)
         val combo = Xp.nextCombo(state.combo, grade)
-        val atEnd = state.index + 1 >= state.items.size
+
+        // A failure goes back into the queue a few questions further on, so the
+        // correction is actually produced rather than merely read.
+        val queue = if (grade == Grade.AGAIN) {
+            SessionBuilder.requeue(state.items, state.index, item)
+        } else {
+            state.items
+        }
+        val atEnd = state.index + 1 >= queue.size
 
         _session.value = state.copy(
+            items = queue,
             index = state.index + 1,
             revealed = false,
             chosen = null,
             typed = "",
             checking = false,
             critique = null,
+            wasCorrect = null,
             assembled = emptyList(),
             combo = combo,
             earned = state.earned + points,
             correct = state.correct + if (grade == Grade.AGAIN) 0 else 1,
+            // Only a first-time pass advances the bar. A retry that succeeds
+            // has already been counted, and counting it twice would let a bad
+            // session finish early.
+            settled = state.settled + if (grade != Grade.AGAIN && !item.isRetry) 1 else 0,
             finished = atEnd,
         )
         if (atEnd) refresh()

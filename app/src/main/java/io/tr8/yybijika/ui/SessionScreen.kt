@@ -92,10 +92,16 @@ fun SessionScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                "${item.skill.labelZh} · ${item.skill.label}" +
-                    if (item.isNew) " · new" else "",
+                "${item.skill.labelZh} · ${item.skill.label}" + when {
+                    // Meeting the same word twice looks like a bug unless the
+                    // app says why — and saying why is also the teaching.
+                    item.isRetry -> " · again"
+                    item.isNew -> " · new"
+                    else -> ""
+                },
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (item.isRetry) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Muting mid-session is allowed, and takes effect on the next
@@ -394,11 +400,41 @@ private fun GradeBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        // Writing has its own Check button and no answer to reveal, so the
-        // generic one would be a second button that did the wrong thing.
-        if (!state.revealed && item.exercise !is Exercise.Compose) {
-            Button(onClick = onReveal, modifier = Modifier.fillMaxWidth()) {
-                Text("Show answer")
+        // Which exercises have a button to submit with at all.
+        //
+        // A multiple choice does not: tapping the answer *is* the submission,
+        // and a Check button beside it is a trap — pressed without choosing, it
+        // marks you wrong for a question you never answered. Writing has its
+        // own. That leaves the ones where you build something up first and then
+        // hand it in, plus the flashcard, which reveals rather than submits.
+        val submits = when (item.exercise) {
+            is Exercise.MultipleChoice, is Exercise.Cloze, is Exercise.Compose -> false
+            else -> true
+        }
+
+        if (!state.revealed && submits) {
+            Button(
+                onClick = onReveal,
+                modifier = Modifier.fillMaxWidth(),
+                // Nothing built yet is nothing to mark.
+                enabled = when (item.exercise) {
+                    is Exercise.Typing -> state.typed.isNotBlank()
+                    is Exercise.TileBuilder -> state.assembled.isNotEmpty()
+                    else -> true
+                },
+            ) {
+                Text(
+                    if (item.exercise is Exercise.Flashcard) "Show answer" else "Check"
+                )
+            }
+        } else if (state.revealed && state.selfGraded) {
+            // The app already knows. Asking the learner to rate themselves a
+            // second after seeing the answer collects a judgement that is
+            // mostly noise — and that noise would set their review intervals.
+            // A right answer has already moved on by itself; this is the
+            // wrong-answer case, which waits as long as it needs to.
+            Button(onClick = { onGrade(Grade.AGAIN) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Got it")
             }
         } else if (state.revealed) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -13,6 +13,13 @@ data class SessionItem(
     val skill: Skill,
     val box: Int,
     val isNew: Boolean,
+    /**
+     * True when this item is back because it was failed earlier in the session.
+     *
+     * Worth marking in the UI: meeting the same word twice looks like a bug
+     * unless the app says why, and "you missed this one" is also the point.
+     */
+    val isRetry: Boolean = false,
 )
 
 /**
@@ -72,7 +79,7 @@ object SessionBuilder {
             introduced++
         }
 
-        return items
+        return shape(items)
     }
 
     /**
@@ -112,7 +119,66 @@ object SessionBuilder {
             unseen.forEach { offer(it, 0, true) }
         }
         bundles.keys.shuffled(random).forEach { offer(it, 0, false) }
-        return items
+        return shape(items)
+    }
+
+    /**
+     * How many questions to put between a failure and its second attempt.
+     *
+     * Far enough that the answer has left working memory — asking again
+     * immediately tests the last three seconds, not the word — and close enough
+     * that it still happens inside the session, while the correction is fresh.
+     */
+    const val RETRY_LAG = 4
+
+    /**
+     * Put a failed item back into the queue, a few questions further on.
+     *
+     * The gap this closes: the session used to be a fixed list, so a word you
+     * got wrong was shown its answer and then never asked again. Reading a
+     * correction and producing it are different acts, and only the second one
+     * leaves anything behind.
+     */
+    fun requeue(
+        queue: List<SessionItem>,
+        at: Int,
+        item: SessionItem,
+        lag: Int = RETRY_LAG,
+    ): List<SessionItem> {
+        val retry = item.copy(isRetry = true)
+        // Clamped to the end so a failure near the finish still comes back
+        // rather than falling off the edge of the session.
+        val target = (at + lag).coerceIn(0, queue.size)
+        return queue.toMutableList().apply { add(target, retry) }
+    }
+
+    /**
+     * Give the session a beginning, a middle and an end.
+     *
+     * Strictly most-overdue-first means a bad fortnight opens with five things
+     * you have already failed, which is the least likely way to get somebody
+     * through a session. People remember the first and last items of a sequence
+     * best, and a session that ends on a failure is remembered as a bad one
+     * whatever happened in the middle — so it opens on something solid, puts
+     * the hard work where it will not be the lasting impression, and ends on
+     * something winnable.
+     *
+     * The schedule still decides *what* is in the session. This only decides
+     * the order.
+     */
+    fun shape(items: List<SessionItem>): List<SessionItem> {
+        if (items.size < 5) return items
+        // New words are not "solid" whatever their box says — they have never
+        // been answered — so they are never chosen to open or close on.
+        val solid = items.filter { !it.isNew }.sortedByDescending { it.box }
+        if (solid.size < 3) return items
+
+        val opener = solid.take(1)
+        val closer = solid.drop(1).take(1)
+        val bookends = (opener + closer).toSet()
+        val middle = items.filterNot { it in bookends }
+
+        return opener + middle + closer
     }
 
     /**
