@@ -54,6 +54,7 @@ import io.tr8.yybijika.ui.SessionScreen
 import io.tr8.yybijika.ui.SettingsScreen
 import io.tr8.yybijika.ui.WordDetailScreen
 import io.tr8.yybijika.ui.WritingScreen
+import io.tr8.yybijika.widget.PinWidget
 import io.tr8.yybijika.ui.theme.YybijikaTheme
 
 /**
@@ -87,6 +88,25 @@ class MainActivity : ComponentActivity() {
             val theme by vm.theme.collectAsState()
             YybijikaTheme(palette = theme.palette, mode = theme.mode) { App(vm) }
         }
+    }
+}
+
+/**
+ * Ask for notification permission, which Android 13 and later require.
+ *
+ * Called when the reminder is switched on rather than at startup. Below API 33
+ * there is nothing to ask for and the call does nothing.
+ */
+private fun askNotificationPermission(context: android.content.Context) {
+    if (android.os.Build.VERSION.SDK_INT < 33) return
+    val activity = context as? android.app.Activity ?: return
+    if (androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.POST_NOTIFICATIONS,
+        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+    ) {
+        androidx.core.app.ActivityCompat.requestPermissions(
+            activity, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 9001,
+        )
     }
 }
 
@@ -371,6 +391,17 @@ private fun App(vm: AppViewModel) {
                         onToggleAudio = vm::setAudioEnabled,
                         onTestSound = vm::testSound,
                         onOpenVoiceSettings = { openVoiceSettings(context) },
+                        onRemind = { on ->
+                            // The permission is asked for at the moment it is
+                            // needed, not at launch: a notification prompt
+                            // before the app has shown its worth is the fastest
+                            // route to a permanent no.
+                            if (on) askNotificationPermission(context)
+                            vm.setRemind(on)
+                        },
+                        onRemindTime = vm::setRemindTime,
+                        onAddWidget = { PinWidget.request(context) },
+                        canPinWidget = PinWidget.isSupported(context),
                         onPalette = vm::setPalette,
                         onThemeMode = vm::setThemeMode,
                     )

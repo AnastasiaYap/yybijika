@@ -282,6 +282,10 @@ interface ProgressDao {
     @Query("SELECT COUNT(DISTINCT wordId) FROM mastery WHERE box >= :box")
     suspend fun heldWords(box: Int): Int
 
+    /** Whether any reviews were done on a particular day. */
+    @Query("SELECT COUNT(*) > 0 FROM daily WHERE date = :day AND reviews > 0")
+    suspend fun studiedOn(day: Long): Boolean
+
     /** The most recent day with any review at all; null if there has never been one. */
     @Query("SELECT MAX(date) FROM daily WHERE reviews > 0")
     suspend fun lastStudiedDay(): Long?

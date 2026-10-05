@@ -2,6 +2,8 @@ package io.tr8.yybijika.data
 
 import android.content.Context
 import androidx.core.content.edit
+import java.time.LocalTime
+import io.tr8.yybijika.remind.Reminder
 import io.tr8.yybijika.ui.theme.Palette
 import io.tr8.yybijika.ui.theme.ThemeMode
 
@@ -98,6 +100,33 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_PASSAGE_PINYIN, false)
         set(value) = prefs.edit { putBoolean(KEY_PASSAGE_PINYIN, value) }
 
+    /**
+     * A daily nudge, and when.
+     *
+     * Off by default. An app that starts sending notifications the moment it is
+     * installed has decided on the user's behalf that it is important, and the
+     * usual answer to that is to turn off notifications for it permanently —
+     * which costs the one reminder that would have been welcome.
+     */
+    var remindEnabled: Boolean
+        get() = prefs.getBoolean(KEY_REMIND, false)
+        set(value) = prefs.edit { putBoolean(KEY_REMIND, value) }
+
+    var remindHour: Int
+        get() = prefs.getInt(KEY_REMIND_HOUR, Reminder.DEFAULT_TIME.hour)
+        set(value) = prefs.edit { putInt(KEY_REMIND_HOUR, value.coerceIn(0, 23)) }
+
+    var remindMinute: Int
+        get() = prefs.getInt(KEY_REMIND_MINUTE, Reminder.DEFAULT_TIME.minute)
+        set(value) = prefs.edit { putInt(KEY_REMIND_MINUTE, value.coerceIn(0, 59)) }
+
+    /** Epoch day of the last reminder shown, so one day never gets two. */
+    var lastRemindedDay: Long
+        get() = prefs.getLong(KEY_REMINDED_DAY, -1)
+        set(value) = prefs.edit { putLong(KEY_REMINDED_DAY, value) }
+
+    val remindAt: LocalTime get() = LocalTime.of(remindHour, remindMinute)
+
     /** Check GitHub for a new release on launch. */
     var autoCheckUpdates: Boolean
         get() = prefs.getBoolean(KEY_AUTO_UPDATE, true)
@@ -119,6 +148,10 @@ class Settings(context: Context) {
         const val KEY_AUTO_UPDATE = "auto_check_updates"
         const val KEY_AUDIO = "audio_enabled"
         const val KEY_PASSAGE_PINYIN = "passage_pinyin"
+        const val KEY_REMIND = "remind_enabled"
+        const val KEY_REMIND_HOUR = "remind_hour"
+        const val KEY_REMIND_MINUTE = "remind_minute"
+        const val KEY_REMINDED_DAY = "last_reminded_day"
         const val KEY_PALETTE = "palette"
         const val KEY_THEME_MODE = "theme_mode"
     }

@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Asked for at the moment the reminder is switched on, never at launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- So the daily reminder survives a restart. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- The app updates itself from its own GitHub releases. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -57,6 +62,19 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/deck_widget_info" />
+        </receiver>
+
+
+        <receiver
+            android:name=".remind.ReminderReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".remind.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
         </receiver>
 
     </application>

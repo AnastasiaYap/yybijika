@@ -27,7 +27,9 @@ import io.tr8.yybijika.learn.CardDeck
 import io.tr8.yybijika.learn.Composer
 import io.tr8.yybijika.widget.WidgetNudge
 import io.tr8.yybijika.learn.Diagnosis
+import androidx.core.app.NotificationManagerCompat
 import io.tr8.yybijika.learn.Vitality
+import io.tr8.yybijika.remind.ReminderScheduler
 import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
 import io.tr8.yybijika.learn.Scheduler
@@ -261,6 +263,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         repo.setAudioEnabled(settings.audioEnabled)
+        // Self-healing: alarms are lost on reboot, on a force-stop, and when
+        // the system decides to clear them. Re-syncing on every launch costs
+        // nothing and means a reminder cannot quietly stop for ever.
+        ReminderScheduler.sync(app)
         repo.setGlossLanguage(settings.glossLanguage)
         speaker.whenReady { available ->
             repo.setTtsAvailable(available)
@@ -302,6 +308,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             audioEnabled = settings.audioEnabled,
             voiceReport = speaker.report.summary,
             voiceWorks = speaker.available,
+            remindEnabled = settings.remindEnabled,
+            remindHour = settings.remindHour,
+            remindMinute = settings.remindMinute,
+            notificationsAllowed = NotificationManagerCompat
+                .from(getApplication()).areNotificationsEnabled(),
             palette = settings.palette,
             themeMode = settings.themeMode,
         )
@@ -916,6 +927,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         loadCards(_cards.value.filter)
         loadLibrary()
         _detail.value?.let { (word, _) -> openWordByHanzi(word.hanzi) }
+    }
+
+    /**
+     * Turn the daily reminder on or off.
+     *
+     * The alarm is synced immediately rather than at next launch, because
+     * somebody who just switched this on will check tonight, and "it starts
+     * working after you reopen the app" is indistinguishable from broken.
+     */
+    fun setRemind(on: Boolean) = viewModelScope.launch {
+        settings.remindEnabled = on
+        ReminderScheduler.sync(getApplication())
+        refreshSettings()
+    }
+
+    fun setRemindTime(hour: Int, minute: Int) = viewModelScope.launch {
+        settings.remindHour = hour
+        settings.remindMinute = minute
+        ReminderScheduler.sync(getApplication())
+        refreshSettings()
     }
 
     fun setPalette(palette: Palette) = viewModelScope.launch {

@@ -1,0 +1,19 @@
+<!-- Status-bar icon: a bamboo stalk with two leaves, flat white as the system
+     requires. Drawn as a path rather than scaled from the widget bitmap, which
+     would be unreadable at 24dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,3h2v18h-2z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13,8c3,-0.4 5,-1.6 6.5,-3.2C18.6,7.4 16.2,9.4 13,10z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,13c-3,-0.4 -5,-1.6 -6.5,-3.2C5.4,12.4 7.8,14.4 11,15z" />
+</vector>

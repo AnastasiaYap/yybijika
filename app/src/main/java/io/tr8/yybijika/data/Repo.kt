@@ -299,6 +299,18 @@ class Repo(
         withContext(Dispatchers.IO) { dao.unmarkedCompositions().size }
 
     /**
+     * Whether a session has happened today.
+     *
+     * Asked directly rather than inferred from the plant. The plant shows a
+     * never-studied deck as fresh, which is the right welcome but the wrong
+     * answer here — read that way, somebody who has never studied is treated as
+     * having already studied today, and the reminder they most need never
+     * arrives.
+     */
+    suspend fun studiedToday(): Boolean =
+        withContext(Dispatchers.IO) { dao.studiedOn(today()) }
+
+    /**
      * How the plant on the home screen is doing.
      *
      * Kept deliberately cheap: it is read by a widget, which Android may update

@@ -14,6 +14,8 @@ import androidx.compose.material3.Card
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilterChip
@@ -59,10 +61,15 @@ data class SettingsState(
     val audioEnabled: Boolean = true,
     val voiceReport: String = "",
     val voiceWorks: Boolean = false,
+    val remindEnabled: Boolean = false,
+    val remindHour: Int = 20,
+    val remindMinute: Int = 0,
+    val notificationsAllowed: Boolean = true,
     val palette: Palette = Palette.CINNABAR,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     state: SettingsState,
@@ -81,6 +88,10 @@ fun SettingsScreen(
     onToggleAudio: (Boolean) -> Unit,
     onTestSound: () -> Unit,
     onOpenVoiceSettings: () -> Unit,
+    onRemind: (Boolean) -> Unit,
+    onRemindTime: (Int, Int) -> Unit,
+    onAddWidget: () -> Unit,
+    canPinWidget: Boolean,
     onPalette: (Palette) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
 ) {
@@ -91,6 +102,79 @@ fun SettingsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+
+        // ---- Reminder -----------------------------------------------------
+        Section("Daily reminder") {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Remind me when reviews are waiting",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = state.remindEnabled, onCheckedChange = onRemind)
+            }
+            Text(
+                "Once a day, and only if something is actually due — a reminder " +
+                    "that arrives when there is nothing to do is how an app " +
+                    "teaches you to ignore it. Nothing is sent on a day you have " +
+                    "already studied.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (state.remindEnabled) {
+                if (!state.notificationsAllowed) {
+                    Text(
+                        "Android is blocking notifications for this app. Allow " +
+                            "them in the system settings and this will start working.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Text("At what time",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Wrapping, because five chips do not fit across a phone and
+                // the last one was being crushed into a column of digits.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // A handful of sensible hours rather than a clock dial: the
+                    // decision is "morning or evening", not "19:43".
+                    listOf(8, 12, 18, 20, 21).forEach { hour ->
+                        FilterChip(
+                            selected = state.remindHour == hour && state.remindMinute == 0,
+                            onClick = { onRemindTime(hour, 0) },
+                            label = { Text("%02d:00".format(hour)) },
+                        )
+                    }
+                }
+            }
+        }
+
+        // ---- Home screen --------------------------------------------------
+        Section("Home screen") {
+            Text(
+                "A bamboo that grows as words stick, fades if you are away, and " +
+                    "comes back the moment you study. It is on the home screen so " +
+                    "it is seen without being looked for.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (canPinWidget) {
+                OutlinedButton(onClick = onAddWidget) { Text("Add it to my home screen") }
+            } else {
+                // Saying so beats a button that does nothing: some launchers
+                // simply do not support being asked.
+                Text(
+                    "This launcher does not take widgets from inside an app. " +
+                        "Long-press the wallpaper, choose Widgets, and find " +
+                        "盈盈笔记卡 in the list.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         // ---- Appearance ---------------------------------------------------
         Section("Appearance") {
