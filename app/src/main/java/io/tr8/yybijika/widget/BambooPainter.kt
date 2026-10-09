@@ -19,9 +19,9 @@ import kotlin.math.sin
  * size the launcher gives us without a folder of assets at five densities.
  *
  * Bamboo because the app is already ink-on-paper and 盈盈笔记卡, and because it
- * is the one plant that grows in visible segments: a new joint for every
- * [Vitality.WORDS_PER_JOINT] words held is a progress bar that does not look
- * like one. It is also one of the Four Gentlemen of brush painting, where it
+ * is the one plant that grows in visible segments: a taller stalk with another
+ * joint in it, every time the deck passes a rung of [Vitality.JOINT_LADDER], is
+ * a progress bar that does not look like one. It is also one of the Four Gentlemen of brush painting, where it
  * stands for bending without breaking, which is the right note for a learning
  * app to strike at somebody who has been away a fortnight.
  */
@@ -49,10 +49,24 @@ object BambooPainter {
 
         val pad = height * 0.08f
         val groundY = height - pad
-        // A faded plant also stands a little shorter, so the change reads at a
+        val span = height - 2 * pad
+
+        // How tall this plant stands, which is the whole point of the joints.
+        //
+        // The stalk used to be drawn at full height whatever the joint count,
+        // with the joints merely subdividing it — so a deck on its first day
+        // showed a finished plant, and every joint earned after that changed
+        // nothing but the number of node lines. Height has to carry the growth
+        // or there is no growth to see.
+        val grown = (state.joints - 1).toFloat() /
+            (Vitality.MAX_JOINTS - 1).coerceAtLeast(1)
+        // A faded plant also stands a little shorter, so absence reads at a
         // glance from the home screen rather than needing to be studied.
-        val topY = pad + (height - 2 * pad) * (1f - v) * 0.12f
-        val stalkH = groundY - topY
+        // The floor is not zero: a deck on day one is a shoot, which should
+        // still read as a plant somebody is growing rather than as a mark on
+        // the screen.
+        val stalkH = span * (0.34f + 0.66f * grown) * (0.94f + 0.06f * v)
+        val topY = groundY - stalkH
         val stalkW = max(3f, width * 0.055f)
         val x = width * 0.42f
 
@@ -73,9 +87,13 @@ object BambooPainter {
             val top = bottom - segment * 0.88f
             val tilt = lean * (i.toFloat() / joints)
             val halfW = stalkW / 2f * (1f - i * 0.03f)
+            // Corner radius clamped against the segment, not just the width:
+            // a tall stalk divides into short segments, and rounding those by
+            // half their width turns the plant into a stack of beads.
+            val radius = min(halfW, segment * 0.16f)
             canvas.drawRoundRect(
                 x + tilt - halfW, top, x + tilt + halfW, bottom,
-                halfW, halfW, paint,
+                radius, radius, paint,
             )
         }
 
@@ -90,22 +108,21 @@ object BambooPainter {
         }
 
         // ---- leaves ------------------------------------------------------
-        // Only the upper joints carry leaves, and droop grows with absence.
+        // Counted rather than derived from the stalk: most of them are today's
+        // work, and that is the part of the plant that has to move while you
+        // are watching. They hang from the upper stalk downwards, and droop
+        // grows with absence.
         paint.style = Paint.Style.FILL
         paint.color = leafColour
-        val leafy = min(joints, 4)
-        for (i in 0 until leafy) {
-            val jointIndex = joints - 1 - i
-            val y = groundY - segment * jointIndex - segment * 0.5f
-            val tilt = lean * (jointIndex.toFloat() / joints)
+        // Upright when fresh, hanging when not.
+        val droop = (1f - v) * 0.85f
+        for (i in 0 until state.leaves) {
+            val along = min(0.82f, 0.10f + 0.15f * i)
+            val y = topY + stalkH * along
+            val tilt = lean * (1f - along)
             val side = if (i % 2 == 0) 1f else -1f
-            val len = width * (0.30f - i * 0.035f) * (0.72f + 0.28f * v)
-            // Upright when fresh, hanging when not.
-            val droop = (1f - v) * 0.85f
+            val len = width * (0.30f - i * 0.022f) * (0.72f + 0.28f * v)
             canvas.drawPath(leaf(x + tilt, y, side * len, droop, i), paint)
-            if (i < 2) {
-                canvas.drawPath(leaf(x + tilt, y - segment * 0.18f, -side * len * 0.8f, droop, i + 1), paint)
-            }
         }
 
         // ---- ground ------------------------------------------------------

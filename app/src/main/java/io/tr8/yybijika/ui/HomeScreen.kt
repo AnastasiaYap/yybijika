@@ -82,9 +82,7 @@ fun HomeScreen(
         // is a picture nobody scrolls to, which is no use to anyone.
         Bamboo(vitality, height = 118.dp)
         Text(
-            if (vitality.held == 0) "Your bamboo grows as words stick."
-            else "${vitality.held} words held" +
-                if (vitality.thirsty) " · it could use a session" else "",
+            Vitality.caption(vitality),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),

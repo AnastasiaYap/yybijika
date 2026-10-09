@@ -319,13 +319,17 @@ class Repo(
      * while the app is not running and will not forgive a slow query.
      */
     suspend fun vitality(): Vitality.State = withContext(Dispatchers.IO) {
+        val today = today()
         val last = dao.lastStudiedDay()
         Vitality.of(
             held = dao.heldWords(Vitality.HELD_BOX),
-            due = dao.dueCount(today()),
+            due = dao.dueCount(today),
             // Never studied at all: show it fresh rather than already wilting.
             // A plant that is dying before the first session is an odd welcome.
-            daysAway = if (last == null) 0 else (today() - last).toInt(),
+            daysAway = if (last == null) 0 else (today - last).toInt(),
+            // Today's work, which is the only part of the plant that can
+            // answer "did what I just did change anything?" during a session.
+            reviewsToday = dao.reviewsOn(today),
         )
     }
 

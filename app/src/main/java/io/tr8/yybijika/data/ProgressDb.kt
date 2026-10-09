@@ -340,6 +340,10 @@ interface ProgressDao {
     @Query("SELECT COUNT(*) > 0 FROM daily WHERE date = :day AND reviews > 0")
     suspend fun studiedOn(day: Long): Boolean
 
+    /** How many questions were answered on a particular day. */
+    @Query("SELECT COALESCE((SELECT reviews FROM daily WHERE date = :day), 0)")
+    suspend fun reviewsOn(day: Long): Int
+
     /** The most recent day with any review at all; null if there has never been one. */
     @Query("SELECT MAX(date) FROM daily WHERE reviews > 0")
     suspend fun lastStudiedDay(): Long?

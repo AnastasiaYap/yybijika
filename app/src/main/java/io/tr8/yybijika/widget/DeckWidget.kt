@@ -125,7 +125,7 @@ class DeckWidget : GlanceAppWidget() {
                 else -> "Your bamboo is well"
             }
         )
-        append(". ${state.held} words held")
+        append(". ${Vitality.caption(state)}")
         if (state.due > 0) append(", ${state.due} due")
         append(".")
     }

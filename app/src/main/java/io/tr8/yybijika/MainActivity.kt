@@ -219,6 +219,9 @@ private fun App(vm: AppViewModel) {
                 overlay = if (detail != null) Overlay.DETAIL else Overlay.BROWSE
             }
             Overlay.DETAIL -> { vm.closeWord(); overlay = detailFrom }
+            // Walking out of a half-finished session still changes the plant:
+            // the leaves are today's answers, and those were already counted.
+            Overlay.SESSION, Overlay.QUIZ_RUN -> { vm.refresh(); overlay = Overlay.NONE }
             Overlay.NONE -> if (tab != Tab.HOME) tab = Tab.HOME
             else -> overlay = Overlay.NONE
         }
