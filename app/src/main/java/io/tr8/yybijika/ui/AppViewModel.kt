@@ -965,39 +965,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val state = _session.value
         val correct = objectiveResult(state.copy(revealed = true))
         _session.value = state.copy(revealed = true, wasCorrect = correct)
-        if (correct == true) advanceAfterPause()
     }
 
     fun choose(index: Int) {
         val state = _session.value
         if (state.revealed) return
         val answered = state.copy(chosen = index, revealed = true)
-        val correct = objectiveResult(answered)
-        _session.value = answered.copy(wasCorrect = correct)
-        if (correct == true) advanceAfterPause()
+        _session.value = answered.copy(wasCorrect = objectiveResult(answered))
     }
 
     /**
-     * Move on by itself when the answer was right.
+     * Why a right answer waits for a tap too.
      *
-     * The rule is meant to be learnable in one sentence: right moves on, wrong
-     * waits for you. It matches what a patient tutor does — no ceremony for the
-     * ones you know, all the time in the world for the ones you do not — and it
-     * halves the taps in a session for anybody doing well.
-     *
-     * Long enough to see the answer turn green, short enough not to feel like
-     * waiting.
+     * It used to move on by itself after a beat, which saved a tap and took the
+     * card away mid-sentence: the reveal is where the pinyin, the usage note
+     * and the marked sentence appear, and that is the part worth reading. The
+     * rule is now the same whichever way the answer went — the app marks it,
+     * and you leave when you have finished looking at it. What it still never
+     * does is ask you to rate yourself on a question it already graded.
      */
-    private fun advanceAfterPause() = viewModelScope.launch {
-        val at = _session.value.index
-        kotlinx.coroutines.delay(850)
-        // Only if nothing else has moved in the meantime — the learner may have
-        // tapped on themselves, or left the session entirely.
-        if (_session.value.index == at && _session.value.wasCorrect == true) {
-            grade(Grade.GOOD)
-        }
-    }
-
     fun type(text: String) = _session.update { it.copy(typed = text) }
 
     /**

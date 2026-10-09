@@ -463,13 +463,20 @@ private fun GradeBar(
                 )
             }
         } else if (state.revealed && state.selfGraded) {
-            // The app already knows. Asking the learner to rate themselves a
-            // second after seeing the answer collects a judgement that is
-            // mostly noise — and that noise would set their review intervals.
-            // A right answer has already moved on by itself; this is the
-            // wrong-answer case, which waits as long as it needs to.
-            Button(onClick = { onGrade(Grade.AGAIN) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Got it")
+            // The app already knows whether this was right, so it does not ask
+            // — a self-rating collected one second after seeing the answer is
+            // mostly noise, and that noise would set the review intervals.
+            //
+            // One button either way, and it waits. Nothing on this screen is
+            // on a timer: the reveal is where the pinyin, the usage note and
+            // the marked sentence appear, and taking the card away while that
+            // is still being read is the opposite of what the pause is for.
+            val right = state.wasCorrect == true
+            Button(
+                onClick = { onGrade(if (right) Grade.GOOD else Grade.AGAIN) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (right) "Next" else "Got it")
             }
         } else if (state.revealed) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
