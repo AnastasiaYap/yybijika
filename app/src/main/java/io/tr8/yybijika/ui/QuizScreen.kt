@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -20,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.tr8.yybijika.data.TopicRow
 import io.tr8.yybijika.exercise.ExerciseType
 import io.tr8.yybijika.learn.Skill
 
@@ -36,12 +39,17 @@ data class QuizSetup(
     val selected: String? = null,          // null means Mixed
     val length: Int = 15,
     val available: Map<String, Int> = emptyMap(),
+    val topics: List<TopicRow> = emptyList(),
+    /** One subject only; null means the whole deck. */
+    val topic: String? = null,
 )
 
 @Composable
 fun QuizScreen(
     setup: QuizSetup,
+    indonesian: Boolean,
     onSelectType: (String?) -> Unit,
+    onSelectTopic: (String?) -> Unit,
     onLength: (Int) -> Unit,
     onStart: () -> Unit,
 ) {
@@ -79,6 +87,33 @@ fun QuizScreen(
                     style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Every question type, chosen by whichever skill is most overdue.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        // Which words, rather than which questions. A topic quiz is a different
+        // way to study: the words arrive as a set that belongs together, so
+        // each one has the others as context instead of standing alone.
+        if (setup.topics.isNotEmpty()) {
+            Text(
+                "On a subject",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(setup.topics, key = { it.slug }) { t ->
+                    FilterChip(
+                        selected = t.slug == setup.topic,
+                        onClick = { onSelectTopic(t.slug) },
+                        label = { Text("${t.emoji} ${t.name(indonesian)}  ${t.count}") },
+                    )
+                }
+            }
+            if (setup.topic != null) {
+                Text(
+                    "Only words from this subject, due or not.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

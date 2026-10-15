@@ -13,6 +13,7 @@ import io.tr8.yybijika.data.CardState
 import io.tr8.yybijika.data.Composition
 import io.tr8.yybijika.data.CharacterState
 import io.tr8.yybijika.data.Repo
+import io.tr8.yybijika.data.TopicRow
 import io.tr8.yybijika.data.CharacterCard
 import io.tr8.yybijika.data.GlossLanguage
 import io.tr8.yybijika.ui.theme.Palette
@@ -203,6 +204,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _browse = MutableStateFlow<List<WordBundle>>(emptyList())
     val browse: StateFlow<List<WordBundle>> = _browse.asStateFlow()
+
+    private val _topics = MutableStateFlow<List<TopicRow>>(emptyList())
+    val topics: StateFlow<List<TopicRow>> = _topics.asStateFlow()
+
+    /** The topic being browsed, if any; null means the whole deck. */
+    private val _topic = MutableStateFlow<String?>(null)
+    val topic: StateFlow<String?> = _topic.asStateFlow()
+
+    /** The topics of the word on screen, for its card. */
+    private val _detailTopics = MutableStateFlow<List<TopicRow>>(emptyList())
+    val detailTopics: StateFlow<List<TopicRow>> = _detailTopics.asStateFlow()
 
     private val _detail = MutableStateFlow<Pair<WordBundle, Map<Skill, Mastery>>?>(null)
     val detail: StateFlow<Pair<WordBundle, Map<Skill, Mastery>>?> = _detail.asStateFlow()
@@ -399,17 +411,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _quiz.value = _quiz.value.copy(
             types = io.tr8.yybijika.exercise.Registry.all,
             available = repo.quizAvailability(),
+            topics = repo.topics(),
         )
     }
 
     fun selectQuizType(id: String?) { _quiz.value = _quiz.value.copy(selected = id) }
+
+    fun selectQuizTopic(slug: String?) {
+        _quiz.value = _quiz.value.copy(topic = if (slug == _quiz.value.topic) null else slug)
+    }
 
     fun setQuizLength(n: Int) { _quiz.value = _quiz.value.copy(length = n) }
 
     fun startQuiz() = viewModelScope.launch {
         val setup = _quiz.value
         _session.value = SessionState()
-        val items = repo.buildSession(setup.length, setup.selected)
+        val items = repo.buildSession(setup.length, setup.selected, setup.topic)
         _session.value = SessionState(
             items = items, planned = items.size, finished = items.isEmpty(),
         )
@@ -1176,18 +1193,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun closeCharacter() { _character.value = null }
 
     fun search(query: String) = viewModelScope.launch {
-        _browse.value = repo.search(query)
+        // Typing searches the whole deck. A topic is a way in, not a filter you
+        // then have to remember to clear — and a search that quietly returned
+        // nothing because a chip was still selected would look broken.
+        if (query.isNotBlank()) _topic.value = null
+        val chosen = _topic.value
+        _browse.value =
+            if (query.isBlank() && chosen != null) repo.wordsInTopic(chosen)
+            else repo.search(query)
+    }
+
+    fun loadTopics() = viewModelScope.launch {
+        if (_topics.value.isEmpty()) _topics.value = repo.topics()
+    }
+
+    /** Show one topic, or the whole deck again when it is tapped a second time. */
+    fun openTopic(slug: String?) = viewModelScope.launch {
+        _topic.value = slug
+        _browse.value = if (slug == null) repo.search("") else repo.wordsInTopic(slug)
     }
 
     fun openWord(id: Long) = viewModelScope.launch {
         val word = repo.word(id) ?: return@launch
         _detail.value = word to repo.masteryFor(id)
+        _detailTopics.value = repo.topicsOf(id)
     }
 
     /** Follow a link from one word's detail page to another's. */
     fun openWordByHanzi(hanzi: String) = viewModelScope.launch {
         val match = repo.search(hanzi).firstOrNull { it.hanzi == hanzi } ?: return@launch
         _detail.value = match to repo.masteryFor(match.id)
+        _detailTopics.value = repo.topicsOf(match.id)
     }
 
     fun closeWord() {

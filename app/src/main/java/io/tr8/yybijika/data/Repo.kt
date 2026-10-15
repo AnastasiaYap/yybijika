@@ -747,9 +747,19 @@ class Repo(
         counts.mapValues { (id, n) -> if (id in silent) 0 else n }
     }
 
+    /**
+     * Build a session.
+     *
+     * [topic] narrows it to one subject — the work vocabulary, the food
+     * vocabulary — which is a different way to study from the schedule's: you
+     * meet a set of words that belong together, so each one arrives with the
+     * others as context rather than alone. The schedule still decides the order
+     * within it, and answers still count exactly the same.
+     */
     suspend fun buildSession(
         size: Int = 20,
         onlyType: String? = null,
+        topic: String? = null,
     ): List<SessionItem> = withContext(Dispatchers.IO) {
         distractorCache.clear()
         rotations = dao.reviewCounts().associate { it.wordId to it.n }
@@ -764,20 +774,29 @@ class Repo(
         // filtered here.
         val doubted = dao.flaggedWordIds().toSet()
 
+        // Null means the whole deck; a topic means only its words, and that
+        // includes which of them are due.
+        val inTopic = topic?.let { content.wordIdsInTopic(it, limit = 2_000).toSet() }
+
         val dueRows = dao.due(today(), size * 2)
-        val due = dueRows.map {
-            SessionBuilder.Due(it.wordId, skillFromKey(it.skill), it.box, it.dueAt)
-        }
+        val due = dueRows
+            .filter { inTopic == null || it.wordId in inTopic }
+            .map { SessionBuilder.Due(it.wordId, skillFromKey(it.skill), it.box, it.dueAt) }
 
         val added = dao.userWords().map { it.toBundle() }
         val addedById = added.associateBy { it.id }
 
         val seen = dao.seenWordIds().toSet()
-        val unseen = (content.allWordIds() + added.map { it.id })
+        val unseen = (inTopic?.toList() ?: (content.allWordIds() + added.map { it.id }))
             .filter { it !in seen && it !in doubted }
             .shuffled()
 
-        val needed = if (onlyType != null) {
+        val needed = if (inTopic != null) {
+            // Every word in the topic, due or not: a topic session is about the
+            // subject, so it has to be able to reach words the schedule has no
+            // opinion about yet.
+            (due.map { it.wordId } + inTopic.toList()).distinct()
+        } else if (onlyType != null) {
             // Only words this question type can actually use, and only a few
             // times as many as the quiz is long. Loading the whole deck and
             // discarding what did not fit cost about twelve seconds.
@@ -1115,6 +1134,22 @@ class Repo(
         withContext(Dispatchers.IO) {
             dao.masteryFor(wordId).associateBy { skillFromKey(it.skill) }
         }
+
+    // ----------------------------------------------------------------------
+    // Topics
+    // ----------------------------------------------------------------------
+
+    suspend fun topics(): List<TopicRow> = withContext(Dispatchers.IO) { content.topics() }
+
+    suspend fun topicsOf(wordId: Long): List<TopicRow> = withContext(Dispatchers.IO) {
+        // A word you added yourself has no topics: nothing has classified it,
+        // and inventing one from a gloss typed a minute ago would be a guess.
+        if (wordId < 0) emptyList() else content.topicsOf(wordId)
+    }
+
+    suspend fun wordsInTopic(slug: String): List<WordBundle> = withContext(Dispatchers.IO) {
+        content.bundles(content.wordIdsInTopic(slug))
+    }
 
     suspend fun search(query: String): List<WordBundle> = withContext(Dispatchers.IO) {
         val added = dao.userWords().map { it.toBundle() }.filter {

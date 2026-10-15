@@ -8,13 +8,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -30,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.tr8.yybijika.data.Mastery
+import io.tr8.yybijika.data.TopicRow
 import io.tr8.yybijika.exercise.WordBundle
 import io.tr8.yybijika.learn.Scheduler
 import io.tr8.yybijika.learn.Skill
@@ -54,7 +59,11 @@ private fun relationLabel(kind: String, note: String?): String = when (kind) {
 @Composable
 fun BrowseScreen(
     words: List<WordBundle>,
+    topics: List<TopicRow>,
+    topic: String?,
+    indonesian: Boolean,
     onSearch: (String) -> Unit,
+    onTopic: (String?) -> Unit,
     onOpen: (Long) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
@@ -69,6 +78,19 @@ fun BrowseScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
+        )
+
+        // A way in rather than a filter on the search: tapping a topic clears
+        // the box, and typing clears the topic. Two things narrowing the same
+        // list at once is how you end up staring at an empty screen.
+        TopicChips(
+            topics = topics,
+            selected = topic,
+            indonesian = indonesian,
+            onTopic = { slug ->
+                query = ""
+                onTopic(if (slug == topic) null else slug)
+            },
         )
         LazyColumn(Modifier.fillMaxSize()) {
             items(words, key = { it.id }) { word ->
@@ -100,11 +122,42 @@ fun BrowseScreen(
     }
 }
 
+/**
+ * The topics, as a scrolling row of chips.
+ *
+ * Counted, because "Work 89" says something a bare label does not: it tells you
+ * whether the category is worth opening before you open it.
+ */
+@Composable
+private fun TopicChips(
+    topics: List<TopicRow>,
+    selected: String?,
+    indonesian: Boolean,
+    onTopic: (String) -> Unit,
+) {
+    if (topics.isEmpty()) return
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(topics, key = { it.slug }) { t ->
+            FilterChip(
+                selected = t.slug == selected,
+                onClick = { onTopic(t.slug) },
+                label = { Text("${t.emoji} ${t.name(indonesian)}  ${t.count}") },
+            )
+        }
+    }
+}
+
 @Composable
 fun WordDetailScreen(
     word: WordBundle,
     mastery: Map<Skill, Mastery>,
     onSpeak: (String) -> Unit,
+    topics: List<TopicRow> = emptyList(),
+    indonesian: Boolean = true,
+    onOpenTopic: (String) -> Unit = {},
     onOpenRelated: (String) -> Unit = {},
     onOpenCharacter: (String) -> Unit = {},
 ) {
@@ -133,6 +186,22 @@ fun WordDetailScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        // What the word is about, and a way out to everything else about the
+        // same thing — which is the only reason to classify a deck at all.
+        if (topics.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            ) {
+                topics.forEach { t ->
+                    AssistChip(
+                        onClick = { onOpenTopic(t.slug) },
+                        label = { Text("${t.emoji} ${t.name(indonesian)}") },
+                    )
+                }
             }
         }
 

@@ -282,6 +282,59 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
         ).use { c -> buildList { while (c.moveToNext()) add(c.getLong(0)) } }
     }
 
+    // ----------------------------------------------------------------------
+    // Topics
+    // ----------------------------------------------------------------------
+
+    /**
+     * Every topic, with how many words it holds.
+     *
+     * Counted here rather than in the pipeline because the count has to agree
+     * with what a tap on the chip will actually show, and that is this query.
+     */
+    fun topics(): List<TopicRow> = db.rawQuery(
+        """SELECT t.slug, t.name_en, t.name_id, t.emoji, COUNT(wt.word_id)
+           FROM topic t
+           LEFT JOIN word_topic wt ON wt.slug = t.slug
+           GROUP BY t.slug
+           HAVING COUNT(wt.word_id) > 0
+           ORDER BY t.ordinal""",
+        null,
+    ).use { c ->
+        buildList {
+            while (c.moveToNext()) {
+                add(TopicRow(c.getString(0), c.getString(1), c.getString(2),
+                             c.getString(3), c.getInt(4)))
+            }
+        }
+    }
+
+    /** The topics one word belongs to, the one it is most about first. */
+    fun topicsOf(wordId: Long): List<TopicRow> = db.rawQuery(
+        """SELECT t.slug, t.name_en, t.name_id, t.emoji, 0
+           FROM word_topic wt JOIN topic t ON t.slug = wt.slug
+           WHERE wt.word_id = ?
+           ORDER BY wt.rank""",
+        arrayOf(wordId.toString()),
+    ).use { c ->
+        buildList {
+            while (c.moveToNext()) {
+                add(TopicRow(c.getString(0), c.getString(1), c.getString(2),
+                             c.getString(3), 0))
+            }
+        }
+    }
+
+    /** The words in a topic, the ones it is most about first. */
+    fun wordIdsInTopic(slug: String, limit: Int = 400): List<Long> = db.rawQuery(
+        """SELECT wt.word_id FROM word_topic wt
+           JOIN word w ON w.id = wt.word_id
+           WHERE wt.slug = ?
+           ORDER BY wt.rank, w.char_count, w.id
+           LIMIT ?""",
+        arrayOf(slug, limit.toString()),
+    ).use { c -> buildList { while (c.moveToNext()) add(c.getLong(0)) } }
+
     /**
      * A pool of candidate distractors: other words the learner might confuse
      * this one with. Same tag where the deck has tags, similar length otherwise.
@@ -696,6 +749,23 @@ data class CharacterCard(
 ) {
     /** Only a character that recurs, and has a meaning, is worth teaching. */
     val teachable: Boolean get() = wordCount >= 2 && !gloss.isNullOrBlank()
+}
+
+/**
+ * A topic, as the screens show it.
+ *
+ * Both names ship because the questions can be asked in either language and a
+ * category labelled in the other one is an odd thing to meet mid-deck. [count]
+ * is only filled in by [ContentDb.topics]; a word's own topics do not carry it.
+ */
+data class TopicRow(
+    val slug: String,
+    val nameEn: String,
+    val nameId: String,
+    val emoji: String,
+    val count: Int,
+) {
+    fun name(indonesian: Boolean): String = if (indonesian) nameId else nameEn
 }
 
 data class DeckStats(

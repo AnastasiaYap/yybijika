@@ -315,4 +315,83 @@ class ContentDbSqlTest {
         assertTrue("tiles look like characters, not words (ratio $perWord)",
             perWord < 0.85)
     }
+
+    // ----------------------------------------------------------------------
+    // Topics
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `every filed word points at a topic that exists`() {
+        assumeTrue("no personal deck — see the README", deck.exists())
+        assertEquals(
+            "word_topic rows with no topic row behind them",
+            0,
+            count(
+                """SELECT 1 FROM word_topic wt
+                   LEFT JOIN topic t ON t.slug = wt.slug
+                   WHERE t.slug IS NULL"""
+            ),
+        )
+        assertEquals(
+            "word_topic rows pointing at a word that is gone",
+            0,
+            count(
+                """SELECT 1 FROM word_topic wt
+                   LEFT JOIN word w ON w.id = wt.word_id
+                   WHERE w.id IS NULL"""
+            ),
+        )
+    }
+
+    /**
+     * A word is about as many things as it is about — but past three, a
+     * category stops being a category and becomes a description.
+     */
+    @Test
+    fun `no word carries more than three topics`() {
+        assumeTrue("no personal deck — see the README", deck.exists())
+        assertEquals(
+            0,
+            count(
+                """SELECT word_id FROM word_topic
+                   GROUP BY word_id HAVING COUNT(*) > 3"""
+            ),
+        )
+    }
+
+    /**
+     * The chips show a count, and a chip that opens an empty list is worse than
+     * no chip: every topic offered has to have words behind it.
+     */
+    @Test
+    fun `every topic shown has words in it`() {
+        assumeTrue("no personal deck — see the README", deck.exists())
+        val offered = count(
+            """SELECT t.slug FROM topic t
+               LEFT JOIN word_topic wt ON wt.slug = t.slug
+               GROUP BY t.slug HAVING COUNT(wt.word_id) > 0"""
+        )
+        assertTrue("the deck should be filed under several topics", offered >= 10)
+    }
+
+    /** Multi-membership is the point: 面试 is work and talking. */
+    @Test
+    fun `words can belong to more than one topic`() {
+        assumeTrue("no personal deck — see the README", deck.exists())
+        val shared = count(
+            """SELECT word_id FROM word_topic GROUP BY word_id HAVING COUNT(*) > 1"""
+        )
+        assertTrue("no word is filed twice — the taxonomy is behaving like a folder",
+            shared > 50)
+    }
+
+    /** Topics are for reading; section markers like s071 are not. */
+    @Test
+    fun `topic names are written for a person`() {
+        assumeTrue("no personal deck — see the README", deck.exists())
+        assertEquals(
+            0,
+            count("""SELECT slug FROM topic WHERE name_en = '' OR name_id = '' OR emoji = ''"""),
+        )
+    }
 }

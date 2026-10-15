@@ -118,6 +118,30 @@ CREATE TABLE pattern_example (
     gloss      TEXT
 );
 
+-- What a word is *about*, from pipeline/topics.py.
+--
+-- Separate from `tag`, which exists to pick plausible distractors and is half
+-- section markers ("written on the same half-page as"). A topic is for a reader:
+-- it has a name in both languages, and a word belongs to as many as it is about
+-- — 面试 is work and talking, 医院 is health and places.
+CREATE TABLE topic (
+    slug    TEXT PRIMARY KEY,
+    name_en TEXT NOT NULL,
+    name_id TEXT NOT NULL,
+    emoji   TEXT NOT NULL,
+    ordinal INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE word_topic (
+    word_id INTEGER NOT NULL REFERENCES word(id) ON DELETE CASCADE,
+    slug    TEXT NOT NULL REFERENCES topic(slug) ON DELETE CASCADE,
+    -- Strongest first: the first topic is the one the word is most about.
+    rank    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (word_id, slug)
+);
+
+CREATE INDEX idx_word_topic_slug ON word_topic(slug);
+
 CREATE TABLE tag (
     word_id INTEGER NOT NULL REFERENCES word(id) ON DELETE CASCADE,
     tag     TEXT NOT NULL,

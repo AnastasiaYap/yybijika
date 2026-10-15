@@ -31,6 +31,7 @@ import segment  # noqa: E402
 import starter_essays  # noqa: E402
 import notes  # noqa: E402
 import tags  # noqa: E402
+import topics as topics_mod  # noqa: E402
 import zh  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -147,6 +148,13 @@ def build(
     segment.load(merged.keys())
 
     word_ids: dict[str, int] = {}
+    for ordinal, topic in enumerate(topics_mod.TOPICS):
+        conn.execute(
+            """INSERT OR REPLACE INTO topic (slug, name_en, name_id, emoji, ordinal)
+               VALUES (?,?,?,?,?)""",
+            (topic.slug, topic.name_en, topic.name_id, topic.emoji, ordinal),
+        )
+
     for hanzi, entry in merged.items():
         # A hand-corrected reading overrides the generated one and is trusted:
         # someone read it in context, which is exactly what the generator cannot do.
@@ -203,6 +211,16 @@ def build(
                                         [g.text for g in entry.glosses])):
             conn.execute(
                 "INSERT OR IGNORE INTO tag (word_id, tag) VALUES (?,?)", (wid, tag)
+            )
+
+        # Topics are what a reader browses by; tags are what the distractor
+        # picker uses. Kept apart on purpose — see pipeline/topics.py.
+        for rank, slug in enumerate(
+            topics_mod.topics_for(hanzi, [g.text for g in entry.glosses])
+        ):
+            conn.execute(
+                "INSERT OR IGNORE INTO word_topic (word_id, slug, rank) VALUES (?,?,?)",
+                (wid, slug, rank),
             )
 
         # The same sentence can arrive twice with and without its full stop —
@@ -537,7 +555,8 @@ def main() -> int:
     counts = {
         t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         for t in ("word", "sense", "usage_note", "relation", "example",
-                  "pattern", "pattern_example", "tag", "passage",
+                  "pattern", "pattern_example", "tag", "topic", "word_topic",
+                  "passage",
                   "passage_question", "orphan")
     }
     # An --out anywhere outside the repo is perfectly legitimate, so the path

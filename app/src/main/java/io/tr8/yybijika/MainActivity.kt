@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.tr8.yybijika.ui.AddNotesScreen
 import io.tr8.yybijika.ui.AddSongScreen
+import io.tr8.yybijika.data.GlossLanguage
 import io.tr8.yybijika.ui.AppViewModel
 import io.tr8.yybijika.ui.BrowseScreen
 import io.tr8.yybijika.ui.CardsScreen
@@ -191,6 +192,9 @@ private fun App(vm: AppViewModel) {
     val songWorking by vm.songWorking.collectAsState()
     val songError by vm.songError.collectAsState()
     val diagnosis by vm.diagnosis.collectAsState()
+    val topics by vm.topics.collectAsState()
+    val topic by vm.topic.collectAsState()
+    val detailTopics by vm.detailTopics.collectAsState()
     val flags by vm.flags.collectAsState()
     val vitality by vm.vitality.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
@@ -301,7 +305,11 @@ private fun App(vm: AppViewModel) {
 
                     Overlay.BROWSE -> BrowseScreen(
                         words = browse,
+                        topics = topics,
+                        topic = topic,
+                        indonesian = settings.glossLanguage == GlossLanguage.INDONESIAN,
                         onSearch = vm::search,
+                        onTopic = vm::openTopic,
                         onOpen = {
                             vm.openWord(it)
                             detailFrom = Overlay.BROWSE
@@ -318,6 +326,13 @@ private fun App(vm: AppViewModel) {
                             word = word,
                             mastery = mastery,
                             onSpeak = vm::speak,
+                            topics = detailTopics,
+                            indonesian = settings.glossLanguage == GlossLanguage.INDONESIAN,
+                            onOpenTopic = { slug ->
+                                vm.closeWord()
+                                vm.openTopic(slug)
+                                overlay = Overlay.BROWSE
+                            },
                             onOpenRelated = vm::openWordByHanzi,
                             onOpenCharacter = {
                                 vm.openCharacter(it); overlay = Overlay.CHARACTER
@@ -435,7 +450,7 @@ private fun App(vm: AppViewModel) {
                         state = home,
                         update = update,
                         onStudy = { vm.startSession(); overlay = Overlay.SESSION },
-                        onBrowse = { overlay = Overlay.BROWSE },
+                        onBrowse = { vm.loadTopics(); overlay = Overlay.BROWSE },
                         onSettings = { overlay = Overlay.SETTINGS },
                         onAddNotes = { overlay = Overlay.ADD },
                         onWriting = { vm.loadWriting(); overlay = Overlay.WRITING },
@@ -507,7 +522,9 @@ private fun App(vm: AppViewModel) {
 
                     Tab.QUIZ -> QuizScreen(
                         setup = quiz,
+                        indonesian = settings.glossLanguage == GlossLanguage.INDONESIAN,
                         onSelectType = vm::selectQuizType,
+                        onSelectTopic = vm::selectQuizTopic,
                         onLength = vm::setQuizLength,
                         onStart = { vm.startQuiz(); overlay = Overlay.QUIZ_RUN },
                     )
