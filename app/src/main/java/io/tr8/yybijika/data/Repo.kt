@@ -22,6 +22,7 @@ import io.tr8.yybijika.exercise.WordBundle
 import io.tr8.yybijika.learn.CardDeck
 import io.tr8.yybijika.learn.CardFilter
 import io.tr8.yybijika.learn.Grade
+import io.tr8.yybijika.learn.TopicGuess
 import io.tr8.yybijika.learn.Scheduler
 import io.tr8.yybijika.learn.SessionBuilder
 import io.tr8.yybijika.learn.SessionItem
@@ -692,6 +693,17 @@ class Repo(
 
     suspend fun deleteUserWord(id: Long) = withContext(Dispatchers.IO) { dao.deleteUserWord(id) }
 
+    /** Added words that nothing has filed under a topic yet. */
+    suspend fun unfiledWords(): List<WordBundle> = withContext(Dispatchers.IO) {
+        dao.unfiledUserWords().map { it.toBundle() }
+    }
+
+    /** Words added on the device, by the ids the rest of the app knows them by. */
+    suspend fun addedWords(ids: Collection<Long>): List<WordBundle> =
+        withContext(Dispatchers.IO) {
+            dao.userWords().map { it.toBundle() }.filter { it.id in ids }
+        }
+
     suspend fun deckStats(): DeckStats = withContext(Dispatchers.IO) {
         val base = content.deckStats()
         val added = dao.userWords()
@@ -1139,16 +1151,126 @@ class Repo(
     // Topics
     // ----------------------------------------------------------------------
 
-    suspend fun topics(): List<TopicRow> = withContext(Dispatchers.IO) { content.topics() }
+    /**
+     * Every topic, shipped and added, with what each holds.
+     *
+     * The counts add the words classified on the device to the ones the deck
+     * shipped, because a chip that says 83 and opens 85 words is a chip nobody
+     * trusts twice.
+     */
+    suspend fun topics(): List<TopicRow> = withContext(Dispatchers.IO) {
+        val added = dao.userTopicCounts().associate { it.slug to it.n }
+        val shipped = content.topics().map {
+            it.copy(count = it.count + (added[it.slug] ?: 0))
+        }
+        val own = dao.userTopics().map {
+            TopicRow(it.slug, it.nameEn, it.nameId, it.emoji, added[it.slug] ?: 0)
+        }
+        (shipped + own).filter { it.count > 0 }
+    }
 
     suspend fun topicsOf(wordId: Long): List<TopicRow> = withContext(Dispatchers.IO) {
-        // A word you added yourself has no topics: nothing has classified it,
-        // and inventing one from a gloss typed a minute ago would be a guess.
-        if (wordId < 0) emptyList() else content.topicsOf(wordId)
+        // A word the deck shipped was filed when the deck was built; one added
+        // on the device was filed here, by the rules or by DeepSeek.
+        if (wordId > 0) return@withContext content.topicsOf(wordId)
+        dao.topicsOfWord(wordId).mapNotNull { row ->
+            content.topic(row.slug) ?: dao.userTopic(row.slug)?.let {
+                TopicRow(it.slug, it.nameEn, it.nameId, it.emoji, 0)
+            }
+        }
     }
 
     suspend fun wordsInTopic(slug: String): List<WordBundle> = withContext(Dispatchers.IO) {
-        content.bundles(content.wordIdsInTopic(slug))
+        val added = dao.wordsInUserTopic(slug).toSet()
+        val mine = dao.userWords().map { it.toBundle() }.filter { it.id in added }
+        mine + content.bundles(content.wordIdsInTopic(slug))
+    }
+
+    /**
+     * File words that were just added.
+     *
+     * Two routes, and the local one is not a fallback to be embarrassed about:
+     * the shipped rules are the same ones that classified the other 1,173 words,
+     * so a word filed by them is filed consistently with the deck. DeepSeek is
+     * asked when there is a key, because it can read a gloss the keyword lists
+     * have never seen — and it is the only one of the two that can notice the
+     * taxonomy is missing a category altogether.
+     *
+     * Returns anything the model proposed, for the learner to accept or not.
+     * Nothing proposed is written here.
+     */
+    suspend fun classify(
+        words: List<WordBundle>,
+        apiKey: String?,
+    ): List<DeepSeek.ProposedTopic> = withContext(Dispatchers.IO) {
+        if (words.isEmpty()) return@withContext emptyList()
+
+        val rules = content.topicRules()
+        val measures = content.measurePhrases()
+        val local = words.associate { word ->
+            word.id to TopicGuess.of(word.hanzi, word.glosses, rules, measures)
+        }
+
+        var filed = local
+        var proposed = emptyList<DeepSeek.ProposedTopic>()
+        if (!apiKey.isNullOrBlank()) {
+            val known = (content.topics() + dao.userTopics().map {
+                TopicRow(it.slug, it.nameEn, it.nameId, it.emoji, 0)
+            }).map { Triple(it.slug, it.nameEn, it.nameId) }
+            val answer = runCatching {
+                DeepSeek(apiKey).classify(
+                    words.map { Triple(it.hanzi, it.glosses.firstOrNull(), it.glosses.getOrNull(1)) },
+                    known,
+                )
+            }.getOrNull()
+            if (answer != null) {
+                val byHanzi = words.associateBy { it.hanzi }
+                // Only where the model actually answered. A word it skipped
+                // keeps what the rules said rather than losing its topics.
+                val fromModel = answer.filed.mapNotNull { f ->
+                    byHanzi[f.hanzi]?.let { it.id to f.topics }
+                }.toMap()
+                filed = local + fromModel.filterValues { it.isNotEmpty() }
+                proposed = answer.proposed
+            }
+        }
+
+        val source = if (apiKey.isNullOrBlank()) "rules" else "deepseek"
+        words.forEach { word ->
+            dao.unfileWord(word.id)
+            val slugs = filed[word.id].orEmpty()
+            if (slugs.isNotEmpty()) {
+                dao.fileWord(
+                    slugs.mapIndexed { i, slug -> UserWordTopic(word.id, slug, i, source) }
+                )
+            }
+        }
+        proposed
+    }
+
+    /**
+     * Accept a proposed category: it exists from now on, and the words that
+     * prompted it go into it.
+     */
+    suspend fun acceptTopic(
+        topic: DeepSeek.ProposedTopic,
+        words: List<WordBundle>,
+    ) = withContext(Dispatchers.IO) {
+        dao.putUserTopic(
+            UserTopic(
+                slug = topic.slug,
+                nameEn = topic.nameEn,
+                nameId = topic.nameId,
+                emoji = topic.emoji,
+            )
+        )
+        val byHanzi = words.associateBy { it.hanzi }
+        val rows = topic.words.mapNotNull { byHanzi[it] }.map { word ->
+            // Appended rather than replacing: 吉他 being filed under Leisure was
+            // not wrong, it was merely vague.
+            UserWordTopic(word.id, topic.slug, dao.topicsOfWord(word.id).size, "deepseek")
+        }
+        if (rows.isNotEmpty()) dao.fileWord(rows)
     }
 
     suspend fun search(query: String): List<WordBundle> = withContext(Dispatchers.IO) {

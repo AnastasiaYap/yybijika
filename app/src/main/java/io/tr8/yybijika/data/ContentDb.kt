@@ -6,6 +6,7 @@ import io.tr8.yybijika.exercise.CharacterPart
 import io.tr8.yybijika.exercise.ExampleSentence
 import io.tr8.yybijika.exercise.Relation
 import io.tr8.yybijika.exercise.WordBundle
+import io.tr8.yybijika.learn.TopicRules
 import java.io.File
 
 /**
@@ -323,6 +324,54 @@ class ContentDb private constructor(private val db: SQLiteDatabase) {
                              c.getString(3), 0))
             }
         }
+    }
+
+    /**
+     * The classifier's rules, as shipped by the pipeline.
+     *
+     * Read once and held by the caller: this is 2,000-odd rows and it is wanted
+     * at the moment somebody saves a batch of pasted words, not per word.
+     */
+    fun topicRules(): List<TopicRules> {
+        val exact = db.rawQuery("SELECT slug, exact_sense FROM topic ORDER BY ordinal", null)
+            .use { c ->
+                buildList { while (c.moveToNext()) add(c.getString(0) to (c.getInt(1) == 1)) }
+            }
+        val byKind = mutableMapOf<String, MutableMap<String, MutableList<String>>>()
+        db.rawQuery("SELECT slug, kind, value FROM topic_rule", null).use { c ->
+            while (c.moveToNext()) {
+                byKind.getOrPut(c.getString(0)) { mutableMapOf() }
+                    .getOrPut(c.getString(1)) { mutableListOf() }
+                    .add(c.getString(2))
+            }
+        }
+        return exact.map { (slug, exactSense) ->
+            val kinds = byKind[slug].orEmpty()
+            TopicRules(
+                slug = slug,
+                words = kinds["word"].orEmpty().toSet(),
+                phrases = kinds["phrase"].orEmpty(),
+                hanzi = kinds["hanzi"].orEmpty(),
+                include = kinds["include"].orEmpty().toSet(),
+                exclude = kinds["exclude"].orEmpty().toSet(),
+                exactSense = exactSense,
+            )
+        }
+    }
+
+    /** The phrases that mean "this word is a counter", from the same rules. */
+    fun measurePhrases(): List<String> = db.rawQuery(
+        "SELECT value FROM topic_rule WHERE kind = 'measure'", null,
+    ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
+
+    /** One topic by slug, for naming a word's topics without re-reading them all. */
+    fun topic(slug: String): TopicRow? = db.rawQuery(
+        "SELECT slug, name_en, name_id, emoji FROM topic WHERE slug = ?",
+        arrayOf(slug),
+    ).use { c ->
+        if (c.moveToNext())
+            TopicRow(c.getString(0), c.getString(1), c.getString(2), c.getString(3), 0)
+        else null
     }
 
     /** The words in a topic, the ones it is most about first. */

@@ -226,6 +226,111 @@ class DeepSeek(private val apiKey: String) {
         val note: String?,
     )
 
+    // ----------------------------------------------------------------------
+    // Topics
+    // ----------------------------------------------------------------------
+
+    /** What the model filed a word under, and any category it wants to add. */
+    data class Filed(val hanzi: String, val topics: List<String>)
+
+    data class ProposedTopic(
+        val slug: String,
+        val nameEn: String,
+        val nameId: String,
+        val emoji: String,
+        /** Why it is worth having — shown to the learner, who decides. */
+        val reason: String,
+        val words: List<String>,
+    )
+
+    data class Classified(
+        val filed: List<Filed>,
+        val proposed: List<ProposedTopic>,
+    )
+
+    /**
+     * File newly added words, and say when the taxonomy is missing a category.
+     *
+     * The model is handed the existing topics and told to use them. Proposing a
+     * new one is allowed but deliberately made expensive: at least three of the
+     * words in this batch have to share a subject none of the existing topics
+     * covers, because a taxonomy that grows a category per paste is a list of
+     * labels, not a set of categories.
+     *
+     * Nothing it proposes is created here. The proposal comes back, the learner
+     * is asked, and only a yes writes it — the same rule the rest of the app
+     * follows for anything a model suggests.
+     */
+    suspend fun classify(
+        words: List<Triple<String, String?, String?>>,
+        topics: List<Triple<String, String, String>>,
+    ): Classified = withContext(Dispatchers.IO) {
+        if (words.isEmpty()) return@withContext Classified(emptyList(), emptyList())
+
+        val asked = JSONObject().apply {
+            put("topics", JSONArray().apply {
+                topics.forEach { (slug, name, _) ->
+                    put(JSONObject().apply { put("slug", slug); put("name", name) })
+                }
+            })
+            put("words", JSONArray().apply {
+                words.forEach { (hanzi, glossId, glossEn) ->
+                    put(JSONObject().apply {
+                        put("hanzi", hanzi)
+                        glossId?.let { put("meaning_id", it) }
+                        glossEn?.let { put("meaning_en", it) }
+                    })
+                }
+            })
+        }
+
+        val reply = request(CLASSIFY_PROMPT + asked.toString(2))
+        val json = JSONObject(extractJson(reply))
+        val known = topics.map { it.first }.toSet()
+
+        val filed = json.optJSONArray("words")?.let { arr ->
+            (0 until arr.length()).mapNotNull { i ->
+                val row = arr.optJSONObject(i) ?: return@mapNotNull null
+                val hanzi = row.optString("hanzi").takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+                val slugs = row.optJSONArray("topics")?.let { t ->
+                    (0 until t.length()).map { t.optString(it) }
+                }.orEmpty()
+                // Only topics that exist, and never more than three: a model
+                // asked for categories will cheerfully return seven.
+                Filed(hanzi, slugs.filter { it in known }.distinct().take(3))
+            }
+        }.orEmpty()
+
+        val proposed = json.optJSONArray("new_topics")?.let { arr ->
+            (0 until arr.length()).mapNotNull { i ->
+                val row = arr.optJSONObject(i) ?: return@mapNotNull null
+                val slug = row.optString("slug").lowercase()
+                    .replace(Regex("[^a-z0-9_]"), "")
+                    .takeIf { it.isNotBlank() && it !in known } ?: return@mapNotNull null
+                val members = row.optJSONArray("words")?.let { w ->
+                    (0 until w.length()).map { w.optString(it) }
+                }.orEmpty()
+                // The bar it was told to clear, enforced here rather than
+                // trusted: three words of this batch, actually in this batch.
+                val mine = members.filter { m -> words.any { it.first == m } }
+                if (mine.size < 3) return@mapNotNull null
+                ProposedTopic(
+                    slug = slug,
+                    nameEn = row.optString("name_en").takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null,
+                    nameId = row.optString("name_id").takeIf { it.isNotBlank() }
+                        ?: row.optString("name_en"),
+                    emoji = row.optString("emoji").takeIf { it.isNotBlank() } ?: "🏷️",
+                    reason = row.optString("why"),
+                    words = mine,
+                )
+            }
+        }.orEmpty()
+
+        Classified(filed, proposed)
+    }
+
     private fun request(prompt: String): String {
         val body = JSONObject().apply {
             put("model", MODEL)
@@ -393,6 +498,22 @@ Here is the sentence:
             "For each word below, supply only what its \"needs\" list asks for. " +
                 "Keep meanings under ten words. An example sentence must contain the " +
                 "word itself and be 5 to 20 characters long.\n\n"
+
+        const val CLASSIFY_PROMPT =
+            "File each word under the topics it is about, using only the slugs " +
+                "in the topics list. One to three topics per word; a word that is " +
+                "about nothing in particular (a grammar word, a connector) gets an " +
+                "empty list, which is a correct answer and not a failure.\n\n" +
+                "You may also propose a new topic, but only when at least THREE of " +
+                "these words share a subject that none of the existing topics " +
+                "covers. Do not propose a narrower version of an existing topic, " +
+                "and do not propose one for a single word. Most batches should " +
+                "propose none.\n\n" +
+                "Reply as {\"words\":[{\"hanzi\":\"...\",\"topics\":" +
+                "[\"slug\"]}],\"new_topics\":[{\"slug\":\"lowercase_ascii\"," +
+                "\"name_en\":\"Short name\",\"name_id\":\"Nama singkat\"," +
+                "\"emoji\":\"one emoji\",\"why\":\"one short sentence\"," +
+                "\"words\":[\"汉字\"]}]}\n\n"
 
         const val PROMPT_SUFFIX =
             "\n\nReply as {\"items\":[{\"hanzi\":\"...\",\"pinyin\":\"tone marks, " +

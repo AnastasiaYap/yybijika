@@ -195,6 +195,7 @@ private fun App(vm: AppViewModel) {
     val topics by vm.topics.collectAsState()
     val topic by vm.topic.collectAsState()
     val detailTopics by vm.detailTopics.collectAsState()
+    val filingResult by vm.filingResult.collectAsState()
     val flags by vm.flags.collectAsState()
     val vitality by vm.vitality.collectAsState()
     val deckKind by vm.deckKind.collectAsState()
@@ -363,6 +364,9 @@ private fun App(vm: AppViewModel) {
                         onToggleCard = vm::toggleCard,
                         onSave = vm::saveCards,
                         onReset = vm::resetAdd,
+                        indonesian = settings.glossLanguage == GlossLanguage.INDONESIAN,
+                        onAcceptTopic = vm::acceptTopic,
+                        onDismissTopic = vm::dismissTopic,
                         onOpenSettings = { overlay = Overlay.SETTINGS },
                     )
 
@@ -437,6 +441,8 @@ private fun App(vm: AppViewModel) {
                         onRemindTime = vm::setRemindTime,
                         onAddWidget = { PinWidget.request(context) },
                         onOpenFlags = { vm.loadFlags(); overlay = Overlay.FLAGS },
+                        onFileWords = vm::fileAddedWords,
+                        filingResult = filingResult,
                         canPinWidget = PinWidget.isSupported(context),
                         onPalette = vm::setPalette,
                         onThemeMode = vm::setThemeMode,

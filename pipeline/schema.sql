@@ -129,7 +129,24 @@ CREATE TABLE topic (
     name_en TEXT NOT NULL,
     name_id TEXT NOT NULL,
     emoji   TEXT NOT NULL,
-    ordinal INTEGER NOT NULL DEFAULT 0
+    ordinal INTEGER NOT NULL DEFAULT 0,
+    -- See pipeline/topics.py: the describing words only count when the
+    -- adjective is the whole meaning.
+    exact_sense INTEGER NOT NULL DEFAULT 0
+);
+
+-- The classifier's rules, shipped so the phone can run them too.
+--
+-- A word you add yourself is classified on the device, and the alternative to
+-- shipping these rows is a second copy of the same keyword lists written in
+-- Kotlin — which would drift from the Python one the first time either changed.
+-- The pipeline owns the rules; this table is how they travel.
+CREATE TABLE topic_rule (
+    slug  TEXT NOT NULL REFERENCES topic(slug) ON DELETE CASCADE,
+    -- word | phrase | hanzi | exclude | measure
+    kind  TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (slug, kind, value)
 );
 
 CREATE TABLE word_topic (

@@ -259,6 +259,44 @@ data class MadeQuestion(
     val answer: Int,
 )
 
+/**
+ * A topic the learner accepted that the deck did not ship.
+ *
+ * Proposed by DeepSeek when a batch of pasted words plainly shares a subject
+ * the taxonomy has no name for, and written here only once the learner has said
+ * yes. In progress.db rather than content.db for the usual reason: content.db
+ * is replaced wholesale by every release, and a category somebody added last
+ * month is not something an app update gets to throw away.
+ */
+@Entity(tableName = "user_topic")
+data class UserTopic(
+    @PrimaryKey val slug: String,
+    @ColumnInfo(name = "name_en") val nameEn: String,
+    @ColumnInfo(name = "name_id") val nameId: String,
+    val emoji: String,
+    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+)
+
+/**
+ * Which topics a word you added belongs to.
+ *
+ * The shipped deck's filings live in content.db; these are the ones decided on
+ * the device. [source] says by what — 'rules' for the shipped classifier run
+ * locally, 'deepseek' when the model was asked — because the two are worth
+ * telling apart when something looks wrong.
+ */
+@Entity(
+    tableName = "user_word_topic",
+    primaryKeys = ["word_id", "slug"],
+    indices = [Index(value = ["slug"], name = "idx_user_word_topic_slug")],
+)
+data class UserWordTopic(
+    @ColumnInfo(name = "word_id") val wordId: Long,
+    val slug: String,
+    val rank: Int = 0,
+    val source: String = "rules",
+)
+
 @Entity(tableName = "daily")
 data class Daily(
     @PrimaryKey val date: Long,        // epoch day
@@ -306,6 +344,48 @@ interface ProgressDao {
     /** Words with an open flag, so a doubted card can be kept out of a session. */
     @Query("SELECT DISTINCT word_id FROM card_flag WHERE fixed_at IS NULL")
     suspend fun flaggedWordIds(): List<Long>
+
+    // ---- topics decided on the device --------------------------------------
+
+    @Upsert
+    suspend fun putUserTopic(topic: UserTopic)
+
+    @Query("SELECT * FROM user_topic ORDER BY created_at")
+    suspend fun userTopics(): List<UserTopic>
+
+    @Query("SELECT * FROM user_topic WHERE slug = :slug")
+    suspend fun userTopic(slug: String): UserTopic?
+
+    @Upsert
+    suspend fun fileWord(rows: List<UserWordTopic>)
+
+    @Query("DELETE FROM user_word_topic WHERE word_id = :wordId")
+    suspend fun unfileWord(wordId: Long)
+
+    @Query("SELECT * FROM user_word_topic WHERE word_id = :wordId ORDER BY rank")
+    suspend fun topicsOfWord(wordId: Long): List<UserWordTopic>
+
+    @Query("SELECT word_id FROM user_word_topic WHERE slug = :slug ORDER BY rank")
+    suspend fun wordsInUserTopic(slug: String): List<Long>
+
+    /** How many added words sit in each topic, for the counts on the chips. */
+    @Query("SELECT slug, COUNT(*) AS n FROM user_word_topic GROUP BY slug")
+    suspend fun userTopicCounts(): List<SlugCount>
+
+    /**
+     * Added words nothing has filed yet.
+     *
+     * Not an error state. Words added before topics existed have none, and so
+     * does anything added while the classification could not run — so there has
+     * to be a way to come back to them.
+     */
+    @Query(
+        """SELECT * FROM user_word
+           WHERE NOT EXISTS (
+             SELECT 1 FROM user_word_topic t WHERE t.word_id = -user_word.id
+           )"""
+    )
+    suspend fun unfiledUserWords(): List<UserWord>
 
     /**
      * How each skill is going: how many words have been met in it, how far
@@ -538,6 +618,8 @@ data class SkillCount(val skill: String, val n: Int)
 
 data class WordCount(val wordId: Long, val n: Int)
 
+data class SlugCount(val slug: String, val n: Int)
+
 data class SkillRow(val skill: String, val words: Int, val meanBox: Double, val lapses: Int)
 
 data class TroubleRow(val wordId: Long, val lapses: Int, val box: Int, val skills: Int)
@@ -550,8 +632,9 @@ data class StateCount(val state: String, val n: Int)
     entities = [Mastery::class, XpEvent::class, Daily::class, UserWord::class,
                 CardState::class, CharacterState::class, Composition::class,
                 MadePassage::class, MadeLine::class, MadeQuestion::class,
-                Slip::class, CardFlag::class],
-    version = 9,
+                Slip::class, CardFlag::class, UserTopic::class,
+                UserWordTopic::class],
+    version = 10,
     exportSchema = false,
 )
 abstract class ProgressDb : RoomDatabase() {
@@ -718,6 +801,37 @@ abstract class ProgressDb : RoomDatabase() {
             }
         }
 
+        /**
+         * Topics for words added on the device, and any category the learner
+         * accepted that the deck did not ship.
+         */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS user_topic (
+                         slug TEXT PRIMARY KEY NOT NULL,
+                         name_en TEXT NOT NULL,
+                         name_id TEXT NOT NULL,
+                         emoji TEXT NOT NULL,
+                         created_at INTEGER NOT NULL
+                       )"""
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS user_word_topic (
+                         word_id INTEGER NOT NULL,
+                         slug TEXT NOT NULL,
+                         rank INTEGER NOT NULL,
+                         source TEXT NOT NULL,
+                         PRIMARY KEY (word_id, slug)
+                       )"""
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS idx_user_word_topic_slug " +
+                        "ON user_word_topic(slug)"
+                )
+            }
+        }
+
         fun get(context: Context): ProgressDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, ProgressDb::class.java, "progress.db"
@@ -727,7 +841,8 @@ abstract class ProgressDb : RoomDatabase() {
                 // Version 2 only adds user_word; Room handles that automatically
                 // once the migration is declared.
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                    MIGRATION_9_10)
                 .build()
                 .also { instance = it }
         }

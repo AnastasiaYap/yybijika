@@ -150,10 +150,28 @@ def build(
     word_ids: dict[str, int] = {}
     for ordinal, topic in enumerate(topics_mod.TOPICS):
         conn.execute(
-            """INSERT OR REPLACE INTO topic (slug, name_en, name_id, emoji, ordinal)
-               VALUES (?,?,?,?,?)""",
-            (topic.slug, topic.name_en, topic.name_id, topic.emoji, ordinal),
+            """INSERT OR REPLACE INTO topic
+               (slug, name_en, name_id, emoji, ordinal, exact_sense)
+               VALUES (?,?,?,?,?,?)""",
+            (topic.slug, topic.name_en, topic.name_id, topic.emoji, ordinal,
+             int(topic.exact_sense)),
         )
+        # The same rules the pipeline just applied, shipped so the phone can
+        # apply them to words added on the device.
+        rules = (
+            [("word", w) for w in topic.words]
+            + [("phrase", p) for p in topic.phrases]
+            + [("hanzi", h) for h in topic.hanzi]
+            + [("exclude", e) for e in topic.exclude]
+            + [("include", i) for i in topic.include]
+        )
+        if topic.slug == "quantity":
+            rules += [("measure", m) for m in topics_mod.MEASURE_PHRASES]
+        for kind, value in rules:
+            conn.execute(
+                "INSERT OR IGNORE INTO topic_rule (slug, kind, value) VALUES (?,?,?)",
+                (topic.slug, kind, value),
+            )
 
     for hanzi, entry in merged.items():
         # A hand-corrected reading overrides the generated one and is trusted:
@@ -555,7 +573,8 @@ def main() -> int:
     counts = {
         t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         for t in ("word", "sense", "usage_note", "relation", "example",
-                  "pattern", "pattern_example", "tag", "topic", "word_topic",
+                  "pattern", "pattern_example", "tag", "topic", "topic_rule",
+                  "word_topic",
                   "passage",
                   "passage_question", "orphan")
     }

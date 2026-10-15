@@ -24,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.tr8.yybijika.data.TopicRow
+import io.tr8.yybijika.notes.DeepSeek
 import io.tr8.yybijika.notes.NoteParser
 import io.tr8.yybijika.ui.theme.HanziInline
 import io.tr8.yybijika.ui.theme.PinyinStyle
@@ -35,9 +37,17 @@ sealed interface AddState {
     data class Parsed(val drafts: List<NoteParser.Draft>) : AddState
     data class Filling(val done: Int, val total: Int) : AddState
     data class Ready(val cards: List<PendingCard>) : AddState
-    data class Saved(val count: Int) : AddState
+    data class Saved(
+        val count: Int,
+        /** Null while the new cards are still being filed. */
+        val filed: List<FiledCard>? = null,
+        val proposals: List<DeepSeek.ProposedTopic> = emptyList(),
+    ) : AddState
     data class Failed(val message: String, val drafts: List<NoteParser.Draft>) : AddState
 }
+
+/** A card that was added, and what it was filed under. */
+data class FiledCard(val hanzi: String, val topics: List<TopicRow>)
 
 /** A card about to be added, after any blanks were filled. */
 data class PendingCard(
@@ -66,6 +76,9 @@ fun AddNotesScreen(
     onToggleCard: (Int) -> Unit,
     onSave: () -> Unit,
     onReset: () -> Unit,
+    indonesian: Boolean = true,
+    onAcceptTopic: (DeepSeek.ProposedTopic) -> Unit = {},
+    onDismissTopic: (DeepSeek.ProposedTopic) -> Unit = {},
     onOpenSettings: () -> Unit,
 ) {
     Column(
@@ -84,6 +97,56 @@ fun AddNotesScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                when {
+                    state.filed == null -> Loading("Filing them…")
+                    else -> Filed(state.filed, indonesian)
+                }
+
+                // Proposed, never applied. A taxonomy that grows a category
+                // every time somebody pastes a list is a list of labels.
+                state.proposals.forEach { proposal ->
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        ),
+                    ) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "A new category?",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                "${proposal.emoji} ${if (indonesian) proposal.nameId
+                                    else proposal.nameEn}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            if (proposal.reason.isNotBlank()) {
+                                Text(proposal.reason,
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text(
+                                "For ${proposal.words.joinToString("、")}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { onAcceptTopic(proposal) }) {
+                                    Text("Add it")
+                                }
+                                TextButton(onClick = { onDismissTopic(proposal) }) {
+                                    Text("No thanks")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Button(onClick = onReset) { Text("Add more") }
             }
 
@@ -153,6 +216,41 @@ fun AddNotesScreen(
 
                     is AddState.Saved -> Unit
                 }
+            }
+        }
+    }
+}
+
+/**
+ * What each new card was filed under.
+ *
+ * Shown rather than done silently: a classification you cannot see is one you
+ * cannot correct, and these are her words — if 吉他 has landed somewhere odd she
+ * should find that out now and not three weeks later in a quiz.
+ */
+@Composable
+private fun Filed(cards: List<FiledCard>, indonesian: Boolean) {
+    if (cards.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            "Filed under",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        cards.forEach { card ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(card.hanzi, style = HanziInline)
+                Text(
+                    if (card.topics.isEmpty()) "nothing in particular"
+                    else card.topics.joinToString("  ") {
+                        "${it.emoji} ${it.name(indonesian)}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

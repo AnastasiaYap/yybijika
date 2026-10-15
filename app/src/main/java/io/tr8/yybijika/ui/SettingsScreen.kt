@@ -69,6 +69,8 @@ data class SettingsState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** Cards reported wrong and not yet corrected. */
     val flagCount: Int = 0,
+    /** Words you added that no topic holds yet. */
+    val unfiledCount: Int = 0,
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -95,6 +97,8 @@ fun SettingsScreen(
     onAddWidget: () -> Unit,
     canPinWidget: Boolean,
     onOpenFlags: () -> Unit,
+    onFileWords: () -> Unit,
+    filingResult: String?,
     onPalette: (Palette) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
 ) {
@@ -412,6 +416,21 @@ fun SettingsScreen(
             // Shown even at zero, so the flag in a session leads somewhere the
             // learner has already seen rather than into a screen they have to
             // discover afterwards.
+            // Only when there is something to do. A button that says "0" is a
+            // button that teaches you to ignore that corner of the screen.
+            if (state.unfiledCount > 0) {
+                Text(
+                    "${state.unfiledCount} added words are not filed under any topic yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = onFileWords) { Text("File them") }
+            }
+            filingResult?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+
             OutlinedButton(onClick = onOpenFlags) {
                 Text(
                     if (state.flagCount == 0) "Cards you flagged"

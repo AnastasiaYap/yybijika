@@ -213,6 +213,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val topic: StateFlow<String?> = _topic.asStateFlow()
 
     /** The topics of the word on screen, for its card. */
+    /** What the last filing run did, shown in Settings. */
+    private val _filingResult = MutableStateFlow<String?>(null)
+    val filingResult: StateFlow<String?> = _filingResult.asStateFlow()
+
     private val _detailTopics = MutableStateFlow<List<TopicRow>>(emptyList())
     val detailTopics: StateFlow<List<TopicRow>> = _detailTopics.asStateFlow()
 
@@ -375,6 +379,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             palette = settings.palette,
             themeMode = settings.themeMode,
             flagCount = repo.openFlagCount(),
+            unfiledCount = repo.unfiledWords().size,
         )
     }
 
@@ -838,8 +843,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             is AddState.Parsed -> state.drafts.map { it.toPending(null) }
             else -> return@launch
         }
-        cards.forEach { card ->
-            repo.addUserWord(
+        val ids = cards.map { card ->
+            // Negative, as everywhere else: a word you added can never collide
+            // with a shipped one.
+            -repo.addUserWord(
                 UserWord(
                     hanzi = card.hanzi,
                     pinyin = card.pinyin,
@@ -860,6 +867,65 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _addText.value = ""
         loadLibrary()
         refresh()
+
+        // Filed after saving rather than before, so a classification that fails
+        // — no key, no network, a model having a bad day — costs the words
+        // nothing. They are in the deck either way.
+        val added = repo.addedWords(ids)
+        savedWords = added
+        val proposals = repo.classify(added, settings.deepseekKey)
+        _topics.value = repo.topics()
+        _addState.value = AddState.Saved(
+            count = cards.size,
+            filed = added.map { FiledCard(it.hanzi, repo.topicsOf(it.id)) },
+            proposals = proposals,
+        )
+    }
+
+    /** The batch just saved, so an accepted category knows which words to hold. */
+    private var savedWords: List<io.tr8.yybijika.exercise.WordBundle> = emptyList()
+
+    fun acceptTopic(proposal: io.tr8.yybijika.notes.DeepSeek.ProposedTopic) =
+        viewModelScope.launch {
+            repo.acceptTopic(proposal, savedWords)
+            _topics.value = repo.topics()
+            val state = _addState.value as? AddState.Saved ?: return@launch
+            _addState.value = state.copy(
+                filed = savedWords.map { FiledCard(it.hanzi, repo.topicsOf(it.id)) },
+                proposals = state.proposals - proposal,
+            )
+        }
+
+    /**
+     * File every added word that has none.
+     *
+     * Words added before the app had topics have no filing, and nor does
+     * anything added while the classification could not run. Without this they
+     * would stay invisible to every topic chip for ever, which is the sort of
+     * quiet gap nobody reports — they simply conclude the feature does not
+     * cover their own words.
+     */
+    fun fileAddedWords() = viewModelScope.launch {
+        val words = repo.unfiledWords()
+        if (words.isEmpty()) {
+            _filingResult.value = "Nothing left to file."
+            return@launch
+        }
+        _filingResult.value = "Filing ${words.size}…"
+        repo.classify(words, settings.deepseekKey)
+        _topics.value = repo.topics()
+        val filed = words.count { repo.topicsOf(it.id).isNotEmpty() }
+        _filingResult.value = when (filed) {
+            0 -> "None of those fitted a topic."
+            1 -> "Filed 1 word."
+            else -> "Filed $filed of ${words.size} words."
+        }
+        refreshSettings()
+    }
+
+    fun dismissTopic(proposal: io.tr8.yybijika.notes.DeepSeek.ProposedTopic) {
+        val state = _addState.value as? AddState.Saved ?: return
+        _addState.value = state.copy(proposals = state.proposals - proposal)
     }
 
     /**
